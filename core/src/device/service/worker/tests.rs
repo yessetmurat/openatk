@@ -1,7 +1,7 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::*;
 use crate::device::{Battery, Model, MouseSnapshot};
@@ -13,6 +13,23 @@ const FAST: Timing = Timing {
     retries: 0,
 };
 const EVENT_WAIT: Duration = Duration::from_secs(5);
+const TICK: Duration = Duration::from_millis(5);
+const NEVER: Duration = Duration::from_secs(3600);
+const LINK_TICKS: PollIntervals = PollIntervals {
+    link: TICK,
+    battery: NEVER,
+};
+const BATTERY_TICKS: PollIntervals = PollIntervals {
+    link: NEVER,
+    battery: TICK,
+};
+const ALL_TICKS: PollIntervals = PollIntervals {
+    link: TICK,
+    battery: TICK,
+};
+const ONLINE_CODE: u8 = 0x03;
+const BATTERY_CODE: u8 = 0x04;
+const IDENTITY_CODE: u8 = 0x10;
 const REFUSED: &str = "refused";
 const BATTERY: Battery = Battery {
     percent: 80,
@@ -26,6 +43,8 @@ struct Device {
     eeprom: [u8; 0x200],
     cid: u8,
     online: bool,
+    silent: bool,
+    mouse_silent: bool,
     reject_writes: bool,
     close_on_next_send: bool,
     status_on_next_send: Option<u8>,
@@ -33,6 +52,7 @@ struct Device {
     fail_find: bool,
     fail_open: bool,
     sent: Vec<[u8; REPORT_LEN]>,
+    sent_at: Vec<Instant>,
     opens: Vec<(DevicePath, usize)>,
     live_links: usize,
 }
@@ -44,6 +64,8 @@ impl Device {
             eeprom: [0; 0x200],
             cid: 2,
             online: true,
+            silent: false,
+            mouse_silent: false,
             reject_writes: false,
             close_on_next_send: false,
             status_on_next_send: None,
@@ -51,6 +73,7 @@ impl Device {
             fail_find: false,
             fail_open: false,
             sent: Vec::new(),
+            sent_at: Vec::new(),
             opens: Vec::new(),
             live_links: 0,
         };
@@ -101,6 +124,19 @@ impl Device {
         self.eeprom[start..start + bytes.len()].copy_from_slice(bytes);
     }
 
+    fn sends_of(&self, code: u8) -> usize {
+        self.sent.iter().filter(|report| report[1] == code).count()
+    }
+
+    fn send_times_of(&self, code: u8) -> Vec<Instant> {
+        self.sent
+            .iter()
+            .zip(&self.sent_at)
+            .filter(|(report, _)| report[1] == code)
+            .map(|(_, time)| *time)
+            .collect()
+    }
+
     fn writes(&self) -> usize {
         let is_write = |report: &&[u8; REPORT_LEN]| report[1] == Command::SetEeprom.code();
 
@@ -113,8 +149,9 @@ impl Device {
         let len = usize::from(report[5]);
 
         match request.command_code() {
+            _ if self.silent => None,
             0x03 => Some((0, vec![u8::from(self.online)])),
-            _ if !self.online => None,
+            _ if !self.online || self.mouse_silent => None,
             0x04 => Some((0, vec![BATTERY.percent, 0])),
             0x0e => Some((0, vec![0])),
             0x10 => Some((0, vec![self.cid, 50, 0x21])),
@@ -142,6 +179,7 @@ impl Link for FakeLink {
     fn send(&mut self, report: &[u8; REPORT_LEN]) -> Result<(), MouseError> {
         let mut device = self.device.lock().expect("device lock");
         device.sent.push(*report);
+        device.sent_at.push(Instant::now());
 
         if std::mem::take(&mut device.close_on_next_send) {
             self.sender.send(Input::LinkClosed).expect("inbox alive");
@@ -170,7 +208,10 @@ impl Link for FakeLink {
 
 impl Drop for FakeLink {
     fn drop(&mut self) {
-        self.device.lock().expect("device lock").live_links -= 1;
+        // A failed assertion can poison the lock: a panic here would abort the whole run.
+        if let Ok(mut device) = self.device.lock() {
+            device.live_links -= 1;
+        }
     }
 }
 
@@ -220,6 +261,10 @@ struct Rig {
 
 impl Rig {
     fn start(device: Device) -> Rig {
+        Rig::with_intervals(device, PollIntervals::default())
+    }
+
+    fn with_intervals(device: Device, intervals: PollIntervals) -> Rig {
         let device = Arc::new(Mutex::new(device));
         let (sender, receiver) = mpsc::channel();
         let (event_sender, events) = mpsc::channel();
@@ -231,7 +276,7 @@ impl Rig {
         let thread = thread::spawn(move || {
             let on_event = move |event| event_sender.send(event).expect("test alive");
 
-            run(connector, Inbox::new(receiver), FAST, on_event);
+            run(connector, Inbox::new(receiver), FAST, intervals, on_event);
         });
 
         Rig {
@@ -263,6 +308,33 @@ impl Rig {
             MouseEvent::Snapshot(snapshot) => snapshot,
             other => panic!("expected a snapshot, got {other:?}"),
         }
+    }
+
+    fn set_polling(&self, on: bool) {
+        self.command(MouseCommand::SetBackgroundPolling(on));
+    }
+
+    /// Waits until `code` has gone out `count` more times.
+    fn wait_for_sends(&self, code: u8, count: usize) {
+        let wanted = self.device().sends_of(code) + count;
+
+        self.wait_for_total_sends(code, wanted);
+    }
+
+    /// Waits until `code` has gone out `wanted` times in all.
+    fn wait_for_total_sends(&self, code: u8, wanted: usize) {
+        let deadline = Instant::now() + EVENT_WAIT;
+
+        while self.device().sends_of(code) < wanted {
+            assert!(Instant::now() < deadline, "no tick sent {code:#04x}");
+            thread::sleep(TICK);
+        }
+    }
+
+    fn assert_no_event_for(&self, duration: Duration) {
+        let event = self.events.recv_timeout(duration);
+
+        assert_eq!(event, Err(RecvTimeoutError::Timeout));
     }
 
     /// Stops the loop and returns the events nobody has read yet.
@@ -706,4 +778,347 @@ fn stop_ends_the_loop() {
     let remaining = rig.finish();
 
     assert_eq!(remaining, []);
+}
+
+#[test]
+fn polling_off_sends_nothing_when_idle() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), ALL_TICKS);
+    rig.next_snapshot();
+    let sent_before = rig.device().sent.len();
+
+    thread::sleep(TICK * 8);
+
+    assert_eq!(rig.device().sent.len(), sent_before);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn set_background_polling_is_not_a_mouse_command() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    rig.next_snapshot();
+    let sent_before = rig.device().sent.len();
+
+    rig.set_polling(true);
+    rig.set_polling(false);
+
+    let device = Arc::clone(&rig.device);
+    assert_eq!(rig.finish(), []);
+    assert_eq!(device.lock().expect("device lock").sent.len(), sent_before);
+}
+
+#[test]
+fn set_background_polling_works_while_disconnected() {
+    let rig = Rig::with_intervals(Device::absent(), LINK_TICKS);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+
+    rig.set_polling(true);
+    rig.device().present = Some(DevicePath::Dongle);
+    rig.send(Input::Hotplug);
+    rig.next_snapshot();
+    rig.device().online = false;
+
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn linked_becomes_active_when_mouse_returns() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.online = false;
+    let rig = Rig::with_intervals(device, LINK_TICKS);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    rig.set_polling(true);
+    rig.wait_for_sends(ONLINE_CODE, 2);
+
+    rig.device().online = true;
+
+    rig.next_snapshot();
+    assert_eq!(rig.device().opens, [(DevicePath::Dongle, 0)]);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn active_becomes_linked_when_mouse_leaves() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), LINK_TICKS);
+    rig.next_snapshot();
+    rig.set_polling(true);
+    rig.wait_for_sends(ONLINE_CODE, 1);
+
+    rig.device().online = false;
+
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    rig.wait_for_sends(ONLINE_CODE, 2);
+    assert_eq!(rig.device().opens, [(DevicePath::Dongle, 0)]);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn link_tick_timeout_only_moves_the_state() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), LINK_TICKS);
+    rig.next_snapshot();
+    rig.set_polling(true);
+
+    rig.device().silent = true;
+
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    rig.wait_for_sends(ONLINE_CODE, 2);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn status_report_during_a_link_tick_identifies() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.mouse_silent = true;
+    let rig = Rig::with_intervals(device, LINK_TICKS);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    rig.device().status_on_next_send = Some(0x40);
+
+    rig.set_polling(true);
+
+    rig.wait_for_total_sends(IDENTITY_CODE, 2);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn battery_tick_emits_battery() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), BATTERY_TICKS);
+    rig.next_snapshot();
+
+    rig.set_polling(true);
+
+    assert_eq!(rig.next_event(), MouseEvent::Battery(BATTERY));
+    assert_eq!(rig.next_event(), MouseEvent::Battery(BATTERY));
+    let remaining = rig.finish();
+    assert!(
+        remaining
+            .iter()
+            .all(|event| *event == MouseEvent::Battery(BATTERY))
+    );
+}
+
+#[test]
+fn battery_tick_timeout_only_moves_the_state() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), BATTERY_TICKS);
+    rig.next_snapshot();
+    rig.set_polling(true);
+
+    rig.device().mouse_silent = true;
+
+    let mut event = rig.next_event();
+    while event == MouseEvent::Battery(BATTERY) {
+        event = rig.next_event();
+    }
+    assert_eq!(event, MouseEvent::NotConnected);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn battery_tick_never_runs_when_offline() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.online = false;
+    let rig = Rig::with_intervals(device, ALL_TICKS);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+
+    rig.set_polling(true);
+    rig.wait_for_sends(ONLINE_CODE, 3);
+
+    assert_eq!(rig.device().sends_of(BATTERY_CODE), 0);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn deadline_that_passed_while_disconnected_does_not_fire_on_connect() {
+    let intervals = PollIntervals {
+        link: NEVER,
+        battery: Duration::from_millis(200),
+    };
+    let rig = Rig::with_intervals(Device::absent(), intervals);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    rig.set_polling(true);
+    thread::sleep(intervals.battery + TICK);
+    rig.device().present = Some(DevicePath::Dongle);
+
+    rig.send(Input::Hotplug);
+
+    rig.next_snapshot();
+    rig.assert_no_event_for(intervals.battery / 4);
+    rig.finish();
+}
+
+#[test]
+fn cable_path_has_no_online_check() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Cable), ALL_TICKS);
+    rig.next_snapshot();
+
+    rig.set_polling(true);
+
+    assert_eq!(rig.next_event(), MouseEvent::Battery(BATTERY));
+    assert_eq!(rig.next_event(), MouseEvent::Battery(BATTERY));
+    assert_eq!(rig.device().sends_of(ONLINE_CODE), 0);
+    rig.finish();
+}
+
+#[test]
+fn turning_polling_off_stops_ticks() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), LINK_TICKS);
+    rig.next_snapshot();
+    rig.set_polling(true);
+    rig.wait_for_sends(ONLINE_CODE, 1);
+
+    rig.set_polling(false);
+    rig.command(MouseCommand::Refresh);
+    rig.next_snapshot();
+    let online_asks = rig.device().sends_of(ONLINE_CODE);
+
+    thread::sleep(TICK * 8);
+
+    assert_eq!(rig.device().sends_of(ONLINE_CODE), online_asks);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn commands_still_run_between_ticks() {
+    let intervals = PollIntervals {
+        link: TICK * 4,
+        battery: NEVER,
+    };
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), intervals);
+    rig.next_snapshot();
+    rig.set_polling(true);
+    let wanted = rig.device().sends_of(ONLINE_CODE) + 3;
+    let deadline = Instant::now() + EVENT_WAIT;
+
+    while rig.device().sends_of(ONLINE_CODE) < wanted {
+        assert!(Instant::now() < deadline, "the commands starved the ticks");
+
+        rig.command(MouseCommand::SetPolling(PollingRate::Hz500));
+
+        assert_eq!(rig.next_snapshot().polling, PollingRate::Hz500);
+        thread::sleep(TICK);
+    }
+
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn online_but_silent_mouse_is_retried_at_the_slow_interval() {
+    let slow = Duration::from_millis(300);
+    let intervals = PollIntervals {
+        link: TICK,
+        battery: slow,
+    };
+    let mut device = Device::on(DevicePath::Dongle);
+    device.mouse_silent = true;
+    let rig = Rig::with_intervals(device, intervals);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    let silent_since = Instant::now();
+
+    rig.set_polling(true);
+    rig.wait_for_sends(ONLINE_CODE, 5);
+
+    assert_eq!(rig.device().sends_of(IDENTITY_CODE), 1);
+
+    rig.wait_for_sends(IDENTITY_CODE, 1);
+
+    assert!(silent_since.elapsed() >= slow / 2);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn online_but_silent_emits_not_connected_once() {
+    let intervals = PollIntervals {
+        link: TICK,
+        battery: Duration::ZERO,
+    };
+    let mut device = Device::on(DevicePath::Dongle);
+    device.mouse_silent = true;
+    let rig = Rig::with_intervals(device, intervals);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+
+    rig.set_polling(true);
+    rig.wait_for_sends(IDENTITY_CODE, 3);
+
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn byte_going_0_to_1_identifies_at_once() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.mouse_silent = true;
+    let rig = Rig::with_intervals(device, LINK_TICKS);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    rig.set_polling(true);
+
+    rig.device().online = false;
+    rig.wait_for_sends(ONLINE_CODE, 2);
+    {
+        let mut device = rig.device();
+        device.online = true;
+        device.mouse_silent = false;
+    }
+
+    rig.next_snapshot();
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn next_tick_counts_from_the_end_of_the_work() {
+    let link = FAST.reply_timeout / 2;
+    let intervals = PollIntervals {
+        link,
+        battery: Duration::ZERO,
+    };
+    let mut device = Device::on(DevicePath::Dongle);
+    device.mouse_silent = true;
+    let rig = Rig::with_intervals(device, intervals);
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+
+    rig.set_polling(true);
+    rig.wait_for_sends(IDENTITY_CODE, 3);
+
+    let times = rig.device().send_times_of(IDENTITY_CODE);
+    let gaps: Vec<Duration> = times.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    assert!(gaps.iter().all(|gap| *gap >= FAST.reply_timeout + link));
+    rig.finish();
+}
+
+#[test]
+fn battery_tick_checks_the_link_first() {
+    let rig = Rig::with_intervals(Device::on(DevicePath::Dongle), BATTERY_TICKS);
+    rig.next_snapshot();
+    let battery_reads = rig.device().sends_of(BATTERY_CODE);
+    rig.device().online = false;
+
+    rig.set_polling(true);
+
+    assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    assert_eq!(rig.device().sends_of(BATTERY_CODE), battery_reads);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn unsupported_model_sends_no_radio_traffic_on_ticks() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.cid = 9;
+    let rig = Rig::with_intervals(device, LINK_TICKS);
+    let unsupported = MouseError::UnsupportedModel { cid: 9, mid: 50 };
+    assert_eq!(
+        rig.next_event(),
+        MouseEvent::CommandFailed(unsupported.clone())
+    );
+
+    rig.set_polling(true);
+    rig.wait_for_sends(ONLINE_CODE, 3);
+
+    assert_eq!(rig.device().sends_of(IDENTITY_CODE), 1);
+
+    rig.command(MouseCommand::Refresh);
+
+    assert_eq!(rig.next_event(), MouseEvent::CommandFailed(unsupported));
+    assert_eq!(rig.device().sends_of(IDENTITY_CODE), 2);
+
+    rig.send(status_report(0x40));
+    rig.wait_for_sends(IDENTITY_CODE, 1);
+
+    assert_eq!(rig.finish(), []);
 }

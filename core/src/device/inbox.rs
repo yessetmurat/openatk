@@ -59,6 +59,20 @@ impl<C> Inbox<C> {
         }
     }
 
+    /// Like [`Inbox::next`], but gives up at `deadline`.
+    ///
+    /// # Errors
+    /// [`RecvTimeoutError::Timeout`] when `deadline` passes, and
+    /// [`RecvTimeoutError::Disconnected`] when the channel is closed and nothing is deferred.
+    pub(crate) fn next_until(&mut self, deadline: Instant) -> Result<Input<C>, RecvTimeoutError> {
+        match self.deferred.pop_front() {
+            Some(input) => Ok(input),
+            None => self
+                .receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now())),
+        }
+    }
+
     /// Returns whether a link close is waiting for [`Inbox::next`].
     #[must_use]
     pub(crate) fn link_closed(&self) -> bool {

@@ -1,6 +1,11 @@
 //! The loop of the service thread: one method per input, moving between the states.
 
+use std::mem;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Instant;
+
 use crate::device::service::connector::Connector;
+use crate::device::service::polling::{PollIntervals, Polling};
 use crate::device::service::state::State;
 use crate::device::{
     DevicePath, Inbox, Input, Link, Mouse, MouseCommand, MouseError, MouseEvent, Session, Timing,
@@ -16,23 +21,39 @@ pub(super) fn run<K: Connector, F: Fn(MouseEvent)>(
     connector: K,
     inbox: Inbox<MouseCommand>,
     timing: Timing,
+    intervals: PollIntervals,
     on_event: F,
 ) {
     let mut worker = Worker {
         connector,
         timing,
+        polling: Polling::new(intervals),
         on_event,
     };
     let mut state = worker.connect(inbox);
 
-    while let Some(input) = state.inbox_mut().next() {
-        state = match input {
-            Input::Report(bytes) => worker.on_report(state, &bytes),
-            Input::Command(command) => worker.on_command(state, command),
-            Input::LinkClosed => worker.on_link_closed(state),
-            Input::Hotplug => worker.on_hotplug(state),
-            Input::Stop => return,
+    loop {
+        let input = match worker.polling.deadline(&state) {
+            Some(deadline) => state.inbox_mut().next_until(deadline),
+            None => state
+                .inbox_mut()
+                .next()
+                .ok_or(RecvTimeoutError::Disconnected),
         };
+        let stage = mem::discriminant(&state);
+
+        state = match input {
+            Ok(Input::Report(bytes)) => worker.on_report(state, &bytes),
+            Ok(Input::Command(command)) => worker.on_command(state, command),
+            Ok(Input::LinkClosed) => worker.on_link_closed(state),
+            Ok(Input::Hotplug) => worker.on_hotplug(state),
+            Err(RecvTimeoutError::Timeout) => worker.on_tick(state),
+            Ok(Input::Stop) | Err(RecvTimeoutError::Disconnected) => return,
+        };
+
+        if mem::discriminant(&state) != stage {
+            worker.polling.restart(Instant::now());
+        }
     }
 }
 
@@ -40,6 +61,7 @@ pub(super) fn run<K: Connector, F: Fn(MouseEvent)>(
 struct Worker<K, F> {
     connector: K,
     timing: Timing,
+    polling: Polling,
     on_event: F,
 }
 
@@ -58,12 +80,19 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
                 session,
                 path,
                 unsupported,
+                ..
             } => self.identify(session, path, unsupported),
             State::Active { mouse, path } => self.settle(mouse, path, status.payload()[0]),
         }
     }
 
     fn on_command(&mut self, state: State<K::Link>, command: MouseCommand) -> State<K::Link> {
+        if let MouseCommand::SetBackgroundPolling(on) = command {
+            self.polling.set(on, Instant::now());
+
+            return state;
+        }
+
         let refresh = command == MouseCommand::Refresh;
 
         match state {
@@ -80,6 +109,79 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
                 self.emit(MouseEvent::CommandFailed(MouseError::NotConnected));
 
                 state
+            }
+        }
+    }
+
+    /// Runs the polls that are due. The link check comes first on every tick: it takes
+    /// under 1 ms and spares a sleeping mouse a battery read that would stall for 12 s.
+    fn on_tick(&mut self, state: State<K::Link>) -> State<K::Link> {
+        let due = self.polling.due(Instant::now());
+        let state = match self.check_link(state) {
+            State::Active { mouse, path } if due.battery => self.settle(mouse, path, BATTERY_FLAG),
+            state => state,
+        };
+
+        self.polling.reschedule(due, Instant::now());
+
+        state
+    }
+
+    /// Asks the dongle whether the mouse is linked. Only a change of the answer shows.
+    fn check_link(&self, state: State<K::Link>) -> State<K::Link> {
+        match state {
+            State::Linked {
+                session,
+                path: path @ DevicePath::Dongle,
+                unsupported,
+                retry_identify_at,
+            } => self.check_return(session, path, unsupported, retry_identify_at),
+            State::Active {
+                mut mouse,
+                path: path @ DevicePath::Dongle,
+            } => match Mouse::is_online(mouse.session_mut()) {
+                Ok(true) => self.settle(mouse, path, 0),
+                Ok(false) => self.after_failed_read(mouse, path, MouseError::NotConnected),
+                Err(error) => self.after_failed_read(mouse, path, error),
+            },
+            state => state,
+        }
+    }
+
+    /// Identifies when the mouse may be back. The ask needs no radio, the identify does,
+    /// so an unsupported model waits for a status report or `Refresh`, and a mouse that
+    /// stayed silent waits for its retry time unless the online byte went through 0.
+    fn check_return(
+        &self,
+        mut session: Session<K::Link, MouseCommand>,
+        path: DevicePath,
+        unsupported: Option<MouseError>,
+        retry_identify_at: Option<Instant>,
+    ) -> State<K::Link> {
+        let answer = Mouse::is_online(&mut session);
+        let status_report = !session.take_status_flags().is_empty();
+        let retry_identify_at = retry_identify_at.filter(|_| answer != Ok(false));
+        let waiting = retry_identify_at.is_some_and(|time| Instant::now() < time);
+        let reported = unsupported.clone().or(Some(MouseError::NotConnected));
+
+        match answer {
+            _ if status_report => self.identify(session, path, reported),
+            Ok(true) if unsupported.is_none() && !waiting => self.identify(session, path, reported),
+            Ok(_) | Err(MouseError::Timeout | MouseError::NotConnected) => State::Linked {
+                session,
+                path,
+                unsupported,
+                retry_identify_at,
+            },
+            Err(error) => {
+                self.emit(MouseEvent::CommandFailed(error));
+
+                State::Linked {
+                    session,
+                    path,
+                    unsupported,
+                    retry_identify_at,
+                }
             }
         }
     }
@@ -157,8 +259,8 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
     }
 
     /// Tries to reach the mouse on an open link, again when a status report arrives
-    /// during a failed attempt. `reported` is the unsupported model already reported for
-    /// this link, which is not reported twice.
+    /// during a failed attempt. `reported` is what the UI already knows about this link:
+    /// an unsupported model, or [`MouseError::NotConnected`]. That is not reported twice.
     fn identify(
         &self,
         mut session: Session<K::Link, MouseCommand>,
@@ -186,6 +288,7 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
         reported: Option<MouseError>,
         error: MouseError,
     ) -> State<K::Link> {
+        let silent = error == MouseError::Timeout;
         let unsupported = match error {
             MouseError::UnsupportedModel { .. } => {
                 if reported.as_ref() != Some(&error) {
@@ -194,14 +297,14 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
 
                 Some(error)
             }
-            MouseError::NotConnected | MouseError::Timeout => {
-                self.emit(MouseEvent::NotConnected);
-
-                None
-            }
             other => {
-                self.emit(MouseEvent::CommandFailed(other));
-                self.emit(MouseEvent::NotConnected);
+                if !matches!(other, MouseError::NotConnected | MouseError::Timeout) {
+                    self.emit(MouseEvent::CommandFailed(other));
+                }
+
+                if reported != Some(MouseError::NotConnected) {
+                    self.emit(MouseEvent::NotConnected);
+                }
 
                 None
             }
@@ -211,6 +314,7 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
             session,
             path,
             unsupported,
+            retry_identify_at: silent.then(|| self.polling.identify_retry_at(Instant::now())),
         }
     }
 
@@ -277,6 +381,7 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
                     session,
                     path,
                     unsupported: None,
+                    retry_identify_at: None,
                 }
             }
             other => {
@@ -303,7 +408,7 @@ fn execute<L: Link>(
         MouseCommand::SetStageDpi(index, stage) => mouse.set_stage_dpi(index, stage),
         MouseCommand::SetButton(button, action) => mouse.set_button(button, action),
         MouseCommand::SetShortcut(button, shortcut) => mouse.set_shortcut(button, &shortcut),
-        MouseCommand::Refresh => Ok(()),
+        MouseCommand::Refresh | MouseCommand::SetBackgroundPolling(_) => Ok(()),
     }
 }
 

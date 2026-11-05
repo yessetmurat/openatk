@@ -7,7 +7,7 @@ rust-version.workspace = true
 [dependencies]
 futures-lite = "2.6.1"
 hidapi = { version = "2.6", features = ["macos-shared-device"] }
-nusb = "0.2"
+async-hid = "0.5"
 
 [lints]
 workspace = true

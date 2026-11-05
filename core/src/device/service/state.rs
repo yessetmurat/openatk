@@ -1,5 +1,7 @@
 //! How far the connection has come, and what each stage owns.
 
+use std::time::Instant;
+
 use crate::device::{DevicePath, Inbox, Link, Mouse, MouseCommand, MouseError, Session};
 
 /// How far the connection has come.
@@ -12,6 +14,9 @@ pub(super) enum State<L> {
         session: Session<L, MouseCommand>,
         path: DevicePath,
         unsupported: Option<MouseError>,
+        /// Set after an identify went unanswered: a link tick that finds the mouse still
+        /// online identifies again only from this time on.
+        retry_identify_at: Option<Instant>,
     },
     /// The mouse is identified and answers.
     Active {

@@ -5,6 +5,7 @@ use std::thread;
 
 use crate::device::hotplug;
 use crate::device::service::hid_connector::HidConnector;
+use crate::device::service::polling::PollIntervals;
 use crate::device::service::worker;
 use crate::device::{Inbox, Input, MouseCommand, MouseEvent, Timing};
 
@@ -34,7 +35,13 @@ impl MouseService {
 
             let connector = HidConnector::new(connector);
 
-            worker::run(connector, Inbox::new(receiver), Timing::default(), on_event);
+            worker::run(
+                connector,
+                Inbox::new(receiver),
+                Timing::default(),
+                PollIntervals::default(),
+                on_event,
+            );
         });
 
         Self { sender }

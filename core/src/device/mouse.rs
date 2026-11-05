@@ -27,18 +27,25 @@ impl<L: Link, C> Mouse<L, C> {
         session: &mut Session<L, C>,
         path: DevicePath,
     ) -> Result<&'static Model, MouseError> {
-        if path == DevicePath::Dongle {
-            let online = session.exchange(&Frame::request(Command::GetWirelessMouseOnline))?;
-
-            if online.payload()[0] != 1 {
-                return Err(MouseError::NotConnected);
-            }
+        if path == DevicePath::Dongle && !Self::is_online(session)? {
+            return Err(MouseError::NotConnected);
         }
 
         let identity = session.exchange(&Frame::request(Command::GetMouseCidMid))?;
         let (cid, mid) = (identity.payload()[0], identity.payload()[1]);
 
         Model::find(cid, mid).ok_or(MouseError::UnsupportedModel { cid, mid })
+    }
+
+    /// Asks the dongle whether the mouse is linked to it. The dongle answers this itself,
+    /// also with the mouse off, so the question costs the mouse nothing.
+    ///
+    /// # Errors
+    /// Any exchange error.
+    pub(crate) fn is_online(session: &mut Session<L, C>) -> Result<bool, MouseError> {
+        let online = session.exchange(&Frame::request(Command::GetWirelessMouseOnline))?;
+
+        Ok(online.payload()[0] == 1)
     }
 
     /// Wraps an identified session.

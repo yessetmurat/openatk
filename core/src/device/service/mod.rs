@@ -6,6 +6,7 @@ mod hid_connector;
 mod mouse_command;
 mod mouse_event;
 mod mouse_service;
+mod polling;
 mod state;
 mod worker;
 

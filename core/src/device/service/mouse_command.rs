@@ -19,4 +19,7 @@ pub enum MouseCommand {
     SetShortcut(Button, Shortcut),
     /// Read everything again, connecting first when needed.
     Refresh,
+    /// Turn the background polling of link and battery on or off. It starts off. This
+    /// stays inside the service: nothing is sent to the mouse and no event answers it.
+    SetBackgroundPolling(bool),
 }
