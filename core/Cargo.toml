@@ -1,0 +1,13 @@
+[package]
+name = "openatk-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+futures-lite = "2.6.1"
+hidapi = { version = "2.6", features = ["macos-shared-device"] }
+nusb = "0.2"
+
+[lints]
+workspace = true
