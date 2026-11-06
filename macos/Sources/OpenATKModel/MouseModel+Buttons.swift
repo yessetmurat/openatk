@@ -32,8 +32,8 @@ extension MouseModel {
         send(.setButton(button: button, action: action))
     }
 
-    /// Stores a shortcut on `button`, unless it is already stored. Refuses any shape the mouse cannot hold: one key, or one
-    /// or two modifiers plus one key.
+    /// Stores a shortcut on `button`, unless it is already stored. Refuses any shape the mouse
+    /// cannot hold: one key, or one or two modifiers plus one key.
     public func setShortcut(button: MouseButton, keys: [ShortcutKeyValue]) {
         guard KeyUsage.isValidShortcut(keys) else {
             return

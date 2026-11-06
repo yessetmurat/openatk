@@ -13,12 +13,10 @@ import SwiftUI
 /// snapshot and only asks the model to write, so a pick is not shown before the mouse confirms it.
 struct MenuBarContent: View {
 
-    let model: MouseModel
-
-    @Environment(\.openWindow) private var openWindow
+    let delegate: AppDelegate
 
     var body: some View {
-        let entries = MenuContent.entries(snapshot: model.snapshot, strings: Strings.self)
+        let entries = MenuContent.entries(snapshot: delegate.model.snapshot, strings: Strings.self)
 
         ForEach(entries.indices, id: \.self) { index in
             item(entries[index])
@@ -35,8 +33,7 @@ struct MenuBarContent: View {
             Divider()
         case .openWindow(let title):
             Button(title) {
-                openWindow(id: MainWindow.sceneID)
-                NSApp.activate()
+                delegate.showMainWindow()
             }
         case .quit(let title):
             Button(title) {
@@ -48,7 +45,7 @@ struct MenuBarContent: View {
     private func toggle(_ choice: MenuChoice) -> some View {
         let isOn = Binding(
             get: { choice.isChecked },
-            set: { _ in model.pick(choice) }
+            set: { _ in delegate.model.pick(choice) }
         )
 
         return Toggle(choice.title, isOn: isOn)

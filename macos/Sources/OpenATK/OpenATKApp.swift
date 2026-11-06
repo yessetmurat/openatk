@@ -22,7 +22,7 @@ struct OpenATKApp: App {
         .windowResizability(.contentSize)
 
         MenuBarExtra(isInserted: $preferences.menuBarIcon) {
-            MenuBarContent(model: delegate.model)
+            MenuBarContent(delegate: delegate)
         } label: {
             MenuBarLabel(delegate: delegate)
         }

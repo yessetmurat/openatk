@@ -67,6 +67,7 @@ impl From<ButtonAction> for Action {
         }
     }
 }
+
 impl Action {
     /// Returns the core action, or `None` for `Other`, which cannot be written.
     pub(crate) fn editable(self) -> Option<ButtonAction> {

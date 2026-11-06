@@ -43,6 +43,22 @@ struct PreferencesTests {
         #expect(Preferences(defaults: defaults).menuBarIcon)
     }
 
+    @Test func dockIconShowsOnlyWhileTheWindowIsOpen() {
+        let preferences = Preferences(defaults: defaults)
+
+        #expect(preferences.showsDockIcon(windowOpen: true))
+        #expect(!preferences.showsDockIcon(windowOpen: false))
+    }
+
+    @Test func dockIconStaysWithoutTheMenuBarIcon() {
+        let preferences = Preferences(defaults: defaults)
+
+        preferences.menuBarIcon = false
+
+        #expect(preferences.showsDockIcon(windowOpen: true))
+        #expect(preferences.showsDockIcon(windowOpen: false))
+    }
+
     @Test func pollingFollowsThePreference() {
         let sink = RecordingSink()
         let model = MouseModel(sink: sink)

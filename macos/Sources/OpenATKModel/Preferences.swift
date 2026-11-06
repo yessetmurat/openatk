@@ -38,6 +38,12 @@ public final class Preferences {
         menuBarIcon = defaults.object(forKey: Self.menuBarIconKey) as? Bool ?? true
     }
 
+    /// Whether the app shows in the Dock. With the window closed it lives in the menu bar alone;
+    /// without the menu bar icon, closing the window quits, so the Dock icon stays until then.
+    public func showsDockIcon(windowOpen: Bool) -> Bool {
+        windowOpen || !menuBarIcon
+    }
+
     /// Sets `model`'s background polling to ``menuBarIcon``, now and on every later change.
     public func applyBackgroundPolling(to model: MouseModel) {
         pollingModel = model

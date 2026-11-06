@@ -19,7 +19,11 @@ struct ButtonModelTests {
         model = MouseModel(sink: sink)
         model.apply(.snapshot(snapshot: .sample(buttons: [
             ButtonValue(button: .left, action: .mouseLeft, keys: nil),
-            ButtonValue(button: .side1, action: .shortcut, keys: [.modifier(mask: 1), .general(usage: 0x06)]),
+            ButtonValue(
+                button: .side1,
+                action: .shortcut,
+                keys: [.modifier(mask: 1), .general(usage: 0x06)]
+            ),
             ButtonValue(button: .side2, action: .shortcut, keys: [.general(usage: 0x4d)]),
             ButtonValue(button: .middle, action: .shortcut, keys: nil),
             ButtonValue(button: .right, action: .other(class: 9, value1: 1, value2: 2), keys: nil),
@@ -119,7 +123,11 @@ struct ButtonModelTests {
     @Test func threeModifiersInCaptureShowMessageAndStay() {
         model.beginCapture(button: .left)
 
-        let keys = model.captureKey(code: 8, modifiers: [.control, .shift, .option], isRepeat: false)
+        let keys = model.captureKey(
+            code: 8,
+            modifiers: [.control, .shift, .option],
+            isRepeat: false
+        )
 
         #expect(keys == nil)
         #expect(model.captureButton == .left)

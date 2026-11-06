@@ -6,9 +6,9 @@ use crate::device::{DevicePath, Inbox, Link, Mouse, MouseCommand, MouseError, Se
 
 /// How far the connection has come.
 pub(super) enum State<L> {
-    /// No USB device.
+    /// No HID device.
     Idle(Inbox<MouseCommand>),
-    /// The USB device is open but no write is allowed: the mouse is offline, or its
+    /// The HID device is open but no write is allowed: the mouse is offline, or its
     /// model is not supported. The link stays open to hear the mouse return.
     Linked {
         session: Session<L, MouseCommand>,

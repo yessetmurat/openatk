@@ -1,8 +1,8 @@
-//! The seam between the loop and USB.
+//! The seam between the loop and the HID service.
 
 use crate::device::{DevicePath, Link, MouseError};
 
-/// Finds the mouse on USB and opens links to it.
+/// Finds the mouse over HID and opens links to it.
 pub(super) trait Connector {
     /// The link this connector opens.
     type Link: Link;

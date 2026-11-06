@@ -11,7 +11,7 @@ pub enum Input<C> {
     Report(Vec<u8>),
     /// The HID link closed.
     LinkClosed,
-    /// A USB device was plugged or unplugged.
+    /// A HID device was added or removed.
     Hotplug,
     /// A command from the UI.
     Command(C),

@@ -1,5 +1,5 @@
 //! The thread that owns the connection to the mouse. It handles one input at a time, so
-//! commands, status reports and USB changes never overlap on the link.
+//! commands, status reports and HID service changes never overlap on the link.
 
 mod connector;
 mod hid_connector;

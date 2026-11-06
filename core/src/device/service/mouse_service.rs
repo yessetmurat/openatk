@@ -20,7 +20,7 @@ impl MouseService {
     /// Starts the thread, which connects at once. `on_event` runs on that thread and must
     /// not panic: a panic ends the thread, and later commands get no answer.
     ///
-    /// When USB changes cannot be watched, the service runs without hotplug and reports
+    /// When HID service changes cannot be watched, the service runs without hotplug and reports
     /// that once as [`MouseEvent::CommandFailed`].
     #[must_use]
     pub fn start(on_event: impl Fn(MouseEvent) + Send + 'static) -> Self {

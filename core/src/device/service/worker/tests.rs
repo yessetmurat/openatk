@@ -442,6 +442,7 @@ fn failed_snapshot_after_write_moves_to_linked() {
     let rig = Rig::start(Device::on(DevicePath::Dongle));
     rig.next_snapshot();
     rig.device().online = false;
+    let sent_before = rig.device().sent.len();
 
     rig.command(MouseCommand::SetPolling(PollingRate::Hz500));
 
@@ -450,6 +451,9 @@ fn failed_snapshot_after_write_moves_to_linked() {
         MouseEvent::CommandFailed(MouseError::Timeout)
     );
     assert_eq!(rig.next_event(), MouseEvent::NotConnected);
+    // Only the write's own first exchange went out: no snapshot read to the silent mouse.
+    assert_eq!(rig.device().sent.len(), sent_before + 1);
+    assert_eq!(rig.device().writes(), 0);
 
     rig.device().online = true;
     rig.send(status_report(0x08));

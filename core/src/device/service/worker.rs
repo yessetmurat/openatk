@@ -97,11 +97,20 @@ impl<K: Connector, F: Fn(MouseEvent)> Worker<K, F> {
 
         match state {
             State::Active { mut mouse, path } => {
-                if let Err(error) = execute(&mut mouse, command) {
-                    self.emit(MouseEvent::CommandFailed(error));
-                }
+                match execute(&mut mouse, command) {
+                    // A silent mouse would time out the snapshot's first exchange too.
+                    Err(error @ (MouseError::Timeout | MouseError::NotConnected)) => {
+                        self.emit(MouseEvent::CommandFailed(error.clone()));
 
-                self.settle(mouse, path, SETTINGS_FLAGS)
+                        self.after_failed_read(mouse, path, error)
+                    }
+                    Err(error) => {
+                        self.emit(MouseEvent::CommandFailed(error));
+
+                        self.settle(mouse, path, SETTINGS_FLAGS)
+                    }
+                    Ok(()) => self.settle(mouse, path, SETTINGS_FLAGS),
+                }
             }
             State::Linked { session, path, .. } if refresh => self.identify(session, path, None),
             State::Idle(inbox) if refresh => self.connect(inbox),
