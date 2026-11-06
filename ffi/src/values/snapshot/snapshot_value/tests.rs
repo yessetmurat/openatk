@@ -15,10 +15,12 @@ fn sample_snapshot() -> MouseSnapshot {
         cid: 1,
         mid: 2,
         profile: 3,
+        profile_count: 4,
         battery: Battery {
             percent: 80,
             charging: true,
         },
+        on_cable: true,
         polling: PollingRate::Hz1000,
         polling_rates: vec![PollingRate::Hz125, PollingRate::Hz1000],
         sensor: Sensor::Paw3950Ultra,
@@ -67,6 +69,7 @@ fn snapshot_converts_all_fields() {
 
     assert_eq!(value.model_name, "Test Mouse");
     assert_eq!(value.profile, 3);
+    assert_eq!(value.profile_count, 4);
     assert_eq!(value.percent, 80);
     assert!(value.charging);
     assert_eq!(value.polling_hz, 1000);
@@ -91,6 +94,17 @@ fn snapshot_converts_all_fields() {
         ])
     );
     assert_eq!(value.buttons[1].action, Action::Shortcut);
+}
+
+#[test]
+fn snapshot_converts_on_cable() {
+    let mut snapshot = sample_snapshot();
+
+    assert!(SnapshotValue::from(&snapshot).on_cable);
+
+    snapshot.on_cable = false;
+
+    assert!(!SnapshotValue::from(&snapshot).on_cable);
 }
 
 #[test]

@@ -2,7 +2,9 @@
 
 A light native replacement for ATK HUB for daily use, for the ATK F1 EXTREME mouse over its 2.4 GHz dongle or the cable.
 
-It changes DPI and polling rate, remaps buttons (including keyboard keys), shows the battery level, and lives in the menu bar. It also sets lift-off, debounce, motion sync, ripple control, angle, linear correction, sleep timer and far distance, and can launch at login. No browser, account, cloud or network access.
+It changes DPI and polling rate, remaps buttons (including keyboard keys), switches profiles, shows the battery level, and lives in the menu bar, with submenus for DPI, polling rate and profile. It also sets lift-off, debounce, motion sync, ripple control, angle, linear correction, sleep timer and far distance, and can launch at login. No browser, account, cloud or network access.
+
+Editing applies to the active profile only: switch to a profile to change it.
 
 Status: macOS only for now. Launch at login is not yet verified across a real logout.
 
@@ -77,7 +79,7 @@ cargo run -p openatk-core --example settings_tool -- set-polling <hz>
 
 Reads and writes need an awake mouse: when it sleeps, `settings_tool` prints "the mouse is not connected".
 
-Dump the settings before experimenting. `dump` refuses to overwrite an existing file. `restore` writes every line of the file that lies inside the writable ranges, so edit a dump with care.
+Dump the settings before experimenting. `dump` and `restore` cover the active profile only. `dump` refuses to overwrite an existing file. `restore` writes every line of the file that lies inside the writable ranges, so edit a dump with care.
 
 ## Safety
 

@@ -84,6 +84,13 @@ impl Fake {
             0x03 => Some((0, vec![self.online])),
             0x04 => Some((0, self.battery.to_vec())),
             0x0e => Some((0, vec![self.profile])),
+            0x0f => {
+                if !self.drop_writes {
+                    self.profile = request.payload()[0];
+                }
+
+                Some((0, vec![request.payload()[0]]))
+            }
             0x10 => Some((0, vec![self.cid, self.mid, 0x21])),
             0x12 if self.silent_mouse_version => None,
             0x12 => Some(match self.firmware {
@@ -360,6 +367,7 @@ fn snapshot_reads_all_fields() {
             charging: true
         }
     );
+    assert!(!snapshot.on_cable);
     assert_eq!(snapshot.polling, PollingRate::Hz1000);
     assert_eq!(snapshot.polling_rates.len(), 7);
     assert_eq!(snapshot.current_stage, 1);
@@ -370,6 +378,15 @@ fn snapshot_reads_all_fields() {
     assert_eq!(snapshot.nearest_valid_dpi(804), 800);
     assert_eq!(snapshot.dpi_range(), 10..=42000);
     assert!(fake.borrow().writes().is_empty());
+}
+
+#[test]
+fn snapshot_on_the_cable_path_is_on_cable() {
+    let (mut mouse, _) = rig(DevicePath::Cable);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert!(snapshot.on_cable);
 }
 
 #[test]
@@ -1488,4 +1505,58 @@ fn unanswered_mouse_version_is_still_a_timeout() {
     fake.borrow_mut().silent_mouse_version = true;
 
     assert_eq!(mouse.snapshot(), Err(MouseError::Timeout));
+}
+
+#[test]
+fn set_profile_reads_back() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_profile(3).expect("set");
+
+    let fake = fake.borrow();
+    assert_eq!(fake.codes(), [0x0e, 0x0f, 0x0e]);
+    assert_eq!(fake.log[1][5..7], [1, 3]);
+    assert_eq!(fake.profile, 3);
+}
+
+#[test]
+fn set_profile_rejects_index_4_with_no_frame() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    let result = mouse.set_profile(4);
+
+    assert!(matches!(result, Err(MouseError::Protocol(_))));
+    assert!(fake.borrow().log.is_empty());
+}
+
+#[test]
+fn set_profile_of_the_active_one_writes_nothing() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_profile(1).expect("already active");
+
+    assert_eq!(fake.borrow().codes(), [0x0e]);
+}
+
+#[test]
+fn profile_mismatch_is_an_error() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().drop_writes = true;
+
+    let result = mouse.set_profile(2);
+
+    assert_eq!(
+        result,
+        Err(MouseError::ProfileMismatch {
+            written: 2,
+            actual: 1,
+        })
+    );
+}
+
+#[test]
+fn snapshot_holds_the_profile_count() {
+    let (mut mouse, _) = rig(DevicePath::Cable);
+
+    assert_eq!(mouse.snapshot().expect("snapshot").profile_count, 4);
 }

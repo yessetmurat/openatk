@@ -15,6 +15,8 @@ extension MouseModel {
             selectStage(index: index)
         case .rate(let hertz):
             selectPolling(hz: hertz)
+        case .profile(let index):
+            selectProfile(index: index)
         }
     }
 

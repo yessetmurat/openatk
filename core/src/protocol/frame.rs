@@ -105,6 +105,21 @@ impl Frame {
         }
     }
 
+    /// Builds a profile switch request. The index has no check byte.
+    #[must_use]
+    pub fn set_profile(index: u8) -> Frame {
+        let mut data = [0; DATA_LEN];
+        data[0] = index;
+
+        Frame {
+            command: Command::SetCurrentConfig.code(),
+            status: 0,
+            address: 0,
+            length: 1,
+            data,
+        }
+    }
+
     /// Encodes the frame as a HID report with its checksum.
     #[must_use]
     pub fn to_report(&self) -> [u8; REPORT_LEN] {

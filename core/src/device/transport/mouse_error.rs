@@ -35,6 +35,13 @@ pub enum MouseError {
         /// Mode read back.
         actual: u8,
     },
+    /// The active profile read back differs from the profile written.
+    ProfileMismatch {
+        /// Profile that was written.
+        written: u8,
+        /// Profile read back.
+        actual: u8,
+    },
     /// The mouse model is not supported.
     UnsupportedModel {
         /// Customer id reported by the mouse.
@@ -57,6 +64,9 @@ impl fmt::Display for MouseError {
             }
             Self::FarDistanceMismatch { written, actual } => {
                 write!(f, "far distance mode is {actual} after writing {written}")
+            }
+            Self::ProfileMismatch { written, actual } => {
+                write!(f, "profile is {actual} after writing {written}")
             }
             Self::UnsupportedModel { cid, mid } => {
                 write!(

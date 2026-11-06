@@ -134,9 +134,9 @@ struct SensorModelTests {
         connect()
 
         let choices = model.sleepChoices
-        let listed = choices.dropLast().filter(\.isSelectable)
+        let listed = choices.dropFirst().filter(\.isSelectable)
 
-        #expect(choices.last == PickerChoice(value: 10, isSelectable: false))
+        #expect(choices.first == PickerChoice(value: 10, isSelectable: false))
         #expect(listed.count == 8)
         #expect(choices.count == 9)
     }

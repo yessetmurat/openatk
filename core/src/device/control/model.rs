@@ -39,6 +39,7 @@ static MODELS: [Model; 1] = [Model {
     angle_min_firmware: Some(FirmwareVersion { major: 3, minor: 0 }),
     debounce_ms: DEBOUNCE_MS,
     sleep_seconds: SLEEP_SECONDS,
+    profile_count: 4,
 }];
 
 /// A supported mouse model.
@@ -64,6 +65,8 @@ pub struct Model {
     pub debounce_ms: &'static [u8],
     /// Sleep times offered, in seconds.
     pub sleep_seconds: &'static [u16],
+    /// Number of profiles.
+    pub profile_count: u8,
 }
 
 impl Model {

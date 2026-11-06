@@ -97,8 +97,12 @@ struct SensorView: View {
         LabeledContent(Strings.angle) {
             HStack(spacing: 8) {
                 if angle.degrees != nil {
-                    DraftField(model: model, field: .angle, title: Strings.angle)
-                    Text(Strings.degreeSign)
+                    DraftField(
+                        model: model,
+                        field: .angle,
+                        title: Strings.angle,
+                        suffix: Strings.degreeSign
+                    )
                 }
 
                 if let enabled = angle.enabled {

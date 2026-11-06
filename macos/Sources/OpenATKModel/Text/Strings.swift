@@ -28,8 +28,14 @@ public enum Strings {
     /// Shown in place of the mouse's name when none can be reached.
     public static let notConnected = "Mouse not connected"
 
-    /// Spoken for the charging mark.
+    /// Shown, and spoken for the charging mark, while the mouse charges.
     public static let charging = "Charging"
+
+    /// Names the profile picker, whose label is hidden, for VoiceOver.
+    public static let profileLabel = "Profile"
+
+    /// The action that switches to the next profile.
+    public static let cycleProfile = "Cycle profile"
 
     /// Label of the polling rate menu.
     public static let pollingRate = "Polling rate"
@@ -132,14 +138,34 @@ public enum Strings {
     }
 
     /// The battery line of the menu.
-    public static func battery(percent: UInt8) -> String {
-        "Battery: \(batteryPercent(percent))"
+    public static func battery(_ display: BatteryDisplay) -> String {
+        switch display {
+        case .charging:
+            "Battery: \(charging)"
+        case .percent(let percent):
+            "Battery: \(batteryPercent(percent))"
+        }
     }
 
     /// The active profile at `index`, counted from 0 and shown from 1. The byte comes from the
     /// mouse unchecked, so it is widened before adding.
     public static func profile(index: UInt8) -> String {
         "Profile \(Int(index) + 1)"
+    }
+
+    /// The title of the profile submenu, with the active profile shown from 1.
+    public static func profileTitle(index: UInt8) -> String {
+        "Profile: \(Int(index) + 1)"
+    }
+
+    /// The title of the polling submenu.
+    public static func pollingTitle(hertz: UInt32) -> String {
+        "Polling: \(self.hertz(hertz))"
+    }
+
+    /// The title of the DPI submenu, or a dash when the current stage is not among the stages.
+    public static func dpiTitle(stage: StageValue?) -> String {
+        "DPI: \(stage.map(stageValue) ?? noValue)"
     }
 
     /// A polling rate.
@@ -152,9 +178,14 @@ public enum Strings {
         "Stage \(index + 1)"
     }
 
-    /// A stage whose axes are equal.
-    public static func dpi(_ dpi: UInt32) -> String {
-        "\(dpi) DPI"
+    /// A stage as a menu item.
+    public static func dpi(_ stage: StageValue) -> String {
+        "\(stageValue(stage)) DPI"
+    }
+
+    /// A stage's value: one number, or X / Y when the axes differ.
+    private static func stageValue(_ stage: StageValue) -> String {
+        stage.x == stage.y ? "\(stage.x)" : "\(stage.x) / \(stage.y)"
     }
 
     /// A stage whose axes differ.
@@ -234,6 +265,10 @@ public enum Strings {
             "Scroll up"
         case .wheelDown:
             "Scroll down"
+        case .profile(let index):
+            profile(index: index)
+        case .profileCycle:
+            cycleProfile
         case .shortcut:
             keyboardKey
         case .other(let actionClass, _, _):

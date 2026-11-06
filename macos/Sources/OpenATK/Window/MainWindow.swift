@@ -29,10 +29,10 @@ struct MainWindow: View {
     @State private var section = SidebarSection.performance
 
     var body: some View {
-        // Not `NavigationSplitView`: its sidebar runs under the title bar and splits it in two.
-        HStack(spacing: 0) {
+        // `NavigationSplitView` gives the sidebar the system's Liquid Glass look.
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             sidebar
-            Divider()
+        } detail: {
             detail
         }
         .frame(width: Self.size.width, height: Self.size.height)
@@ -56,21 +56,26 @@ struct MainWindow: View {
                     .font(.custom(Self.fontFamily, size: Self.sidebarFontSize))
             }
         }
-        .listStyle(.sidebar)
         .labelStyle(SidebarLabelStyle())
         .environment(\.sidebarRowSize, .large)
-        .frame(width: Self.sidebarWidth)
+        .toolbar(removing: .sidebarToggle)
+        // Must stay last: a modifier after it hides the width from the split view.
+        .navigationSplitViewColumnWidth(Self.sidebarWidth)
     }
 
     private var detail: some View {
         VStack(spacing: 0) {
-            Header(snapshot: model.snapshot)
+            Header(model: model)
             Divider()
             sectionView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             errorLine
         }
+        // The title bar is hidden, so nothing needs the space it reserves.
+        .ignoresSafeArea(.container, edges: .top)
         .navigationTitle(section.title)
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         // Not on the root: a sidebar label whose font equals an inherited one loses it to the
         // system's row font, so the sidebar size could not match this one.
         .font(.custom(Self.fontFamily, size: Self.fontSize))

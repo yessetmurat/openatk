@@ -1,6 +1,6 @@
 //! What a button does.
 
-use openatk_core::settings::{ButtonAction, DpiAction, MouseAction, WheelAction};
+use openatk_core::settings::{ButtonAction, DpiAction, MouseAction, ProfileAction, WheelAction};
 
 /// What a button does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -27,6 +27,13 @@ pub enum Action {
     WheelUp,
     /// Scrolls down.
     WheelDown,
+    /// Switches to a profile.
+    Profile {
+        /// Profile index, counted from 0.
+        index: u8,
+    },
+    /// Switches to the next profile.
+    ProfileCycle,
     /// Sends the stored shortcut.
     Shortcut,
     /// An action this app cannot edit; it keeps its bytes.
@@ -54,6 +61,8 @@ impl From<ButtonAction> for Action {
             ButtonAction::Dpi(DpiAction::Minus) => Self::DpiMinus,
             ButtonAction::Wheel(WheelAction::Up) => Self::WheelUp,
             ButtonAction::Wheel(WheelAction::Down) => Self::WheelDown,
+            ButtonAction::Profile(ProfileAction::Profile(index)) => Self::Profile { index },
+            ButtonAction::Profile(ProfileAction::Cycle) => Self::ProfileCycle,
             ButtonAction::Shortcut => Self::Shortcut,
             ButtonAction::Other {
                 class,
@@ -83,6 +92,8 @@ impl Action {
             Self::DpiMinus => ButtonAction::Dpi(DpiAction::Minus),
             Self::WheelUp => ButtonAction::Wheel(WheelAction::Up),
             Self::WheelDown => ButtonAction::Wheel(WheelAction::Down),
+            Self::Profile { index } => ButtonAction::Profile(ProfileAction::Profile(index)),
+            Self::ProfileCycle => ButtonAction::Profile(ProfileAction::Cycle),
             Self::Shortcut => ButtonAction::Shortcut,
             Self::Other { .. } => return None,
         })

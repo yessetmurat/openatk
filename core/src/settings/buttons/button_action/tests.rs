@@ -93,3 +93,51 @@ fn button_addresses() {
     assert_eq!(Button::Left.shortcut_address(), 0x100);
     assert_eq!(Button::Side2.shortcut_address(), 0x180);
 }
+
+#[test]
+fn profile_action_vectors() {
+    let cases = [
+        (
+            ButtonAction::Profile(ProfileAction::Profile(0)),
+            [9, 0xa1, 0, 0xab],
+        ),
+        (
+            ButtonAction::Profile(ProfileAction::Profile(3)),
+            [9, 0xa4, 0, 0xa8],
+        ),
+        (
+            ButtonAction::Profile(ProfileAction::Cycle),
+            [9, 0xff, 0, 0x4d],
+        ),
+    ];
+
+    for (action, bytes) in cases {
+        assert_eq!(action.encode(), Some(bytes));
+        assert_eq!(ButtonAction::decode(bytes), Ok(action));
+        assert!(action.is_editable());
+    }
+}
+
+#[test]
+fn unknown_profile_value_is_other() {
+    for value1 in [0, 0xa0, 0xa5, 0xfe] {
+        let bytes = [9, value1, 0, check::sum(&[9, value1, 0])];
+
+        assert_eq!(
+            ButtonAction::decode(bytes),
+            Ok(ButtonAction::Other {
+                class: 9,
+                value1,
+                value2: 0
+            })
+        );
+    }
+}
+
+#[test]
+fn profile_index_out_of_range_does_not_encode() {
+    assert_eq!(
+        ButtonAction::Profile(ProfileAction::Profile(4)).encode(),
+        None
+    );
+}

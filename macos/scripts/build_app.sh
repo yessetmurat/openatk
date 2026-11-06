@@ -6,8 +6,11 @@ macos="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app="$macos/build/openatk.app"
 
 "$macos/scripts/build_rust.sh"
-swift build -c release --package-path "$macos"
-binary="$(swift build -c release --package-path "$macos" --show-bin-path)/OpenATK"
+# SwiftPM stamps the deployment target as the linked SDK version, and macOS then gives the app the
+# old look instead of Liquid Glass. Pass the real SDK version to the linker.
+linker_sdk=(-Xlinker -platform_version -Xlinker macos -Xlinker 15.0 -Xlinker "$(xcrun --show-sdk-version)")
+swift build -c release --package-path "$macos" "${linker_sdk[@]}"
+binary="$(swift build -c release --package-path "$macos" "${linker_sdk[@]}" --show-bin-path)/OpenATK"
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"

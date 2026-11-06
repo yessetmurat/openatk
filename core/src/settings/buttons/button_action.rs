@@ -6,7 +6,11 @@ use crate::protocol::check;
 const CLASS_MOUSE: u8 = 1;
 const CLASS_DPI: u8 = 2;
 const CLASS_SHORTCUT: u8 = 5;
+const CLASS_PROFILE: u8 = 9;
 const CLASS_WHEEL: u8 = 11;
+const PROFILE_FIRST: u8 = 0xa1;
+const PROFILE_LAST: u8 = PROFILE_FIRST + ProfileAction::COUNT - 1;
+const PROFILE_CYCLE: u8 = 0xff;
 
 /// A mouse button the action presses, or `Disabled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +49,20 @@ pub enum WheelAction {
     Down,
 }
 
+/// A profile action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileAction {
+    /// Switch to the profile with this index, counted from 0 (0 to 3).
+    Profile(u8),
+    /// Go to the next profile, wrapping around.
+    Cycle,
+}
+
+impl ProfileAction {
+    /// Number of profiles a button can switch to.
+    pub const COUNT: u8 = 4;
+}
+
 /// The action assigned to a button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonAction {
@@ -54,6 +72,8 @@ pub enum ButtonAction {
     Dpi(DpiAction),
     /// A wheel scroll.
     Wheel(WheelAction),
+    /// A profile change.
+    Profile(ProfileAction),
     /// A keyboard shortcut stored at the button's shortcut address.
     Shortcut,
     /// An action the app does not edit. Shown read-only and never written.
@@ -75,6 +95,7 @@ impl ButtonAction {
             Self::Mouse(action) => (CLASS_MOUSE, mouse_value(action)),
             Self::Dpi(action) => (CLASS_DPI, dpi_value(action)),
             Self::Wheel(action) => (CLASS_WHEEL, wheel_value(action)),
+            Self::Profile(action) => return profile_bytes(action),
             Self::Shortcut => (CLASS_SHORTCUT, 0),
             Self::Other { .. } => return None,
         };
@@ -107,6 +128,10 @@ impl ButtonAction {
             (CLASS_WHEEL, 1, 0) => Some(Self::Wheel(WheelAction::Up)),
             (CLASS_WHEEL, 2, 0) => Some(Self::Wheel(WheelAction::Down)),
             (CLASS_SHORTCUT, 0, 0) => Some(Self::Shortcut),
+            (CLASS_PROFILE, PROFILE_CYCLE, 0) => Some(Self::Profile(ProfileAction::Cycle)),
+            (CLASS_PROFILE, value @ PROFILE_FIRST..=PROFILE_LAST, 0) => {
+                Some(Self::Profile(ProfileAction::Profile(value - PROFILE_FIRST)))
+            }
             _ => None,
         };
 
@@ -122,6 +147,21 @@ impl ButtonAction {
     pub fn is_editable(self) -> bool {
         !matches!(self, Self::Other { .. })
     }
+}
+
+fn profile_bytes(action: ProfileAction) -> Option<[u8; 4]> {
+    let value1 = match action {
+        ProfileAction::Profile(index) if index < ProfileAction::COUNT => PROFILE_FIRST + index,
+        ProfileAction::Profile(_) => return None,
+        ProfileAction::Cycle => PROFILE_CYCLE,
+    };
+
+    Some([
+        CLASS_PROFILE,
+        value1,
+        0,
+        check::sum(&[CLASS_PROFILE, value1, 0]),
+    ])
 }
 
 fn mouse_value(action: MouseAction) -> u8 {

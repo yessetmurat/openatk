@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 
 use openatk_core::device::MouseCommand;
-use openatk_core::settings::{DpiStage, PollingRate, Shortcut, ShortcutKey};
+use openatk_core::settings::{DpiStage, PollingRate, ProfileAction, Shortcut, ShortcutKey};
 
 use crate::values::{Action, MouseButton, ShortcutKeyValue};
 
@@ -94,6 +94,11 @@ pub enum Command {
         /// Whether far distance mode is on.
         enabled: bool,
     },
+    /// Switch to a profile.
+    SetProfile {
+        /// Profile index, counted from 0.
+        index: u8,
+    },
     /// Turn background polling of link and battery on or off.
     SetBackgroundPolling {
         /// Whether polling runs.
@@ -113,6 +118,8 @@ pub enum CommandError {
     ReadOnlyAction,
     /// The key list is not a valid shortcut.
     InvalidShortcut(String),
+    /// The profile index is not one a button can switch to.
+    UnknownProfile(u8),
 }
 
 impl fmt::Display for CommandError {
@@ -121,6 +128,7 @@ impl fmt::Display for CommandError {
             Self::UnknownPollingRate(hz) => write!(f, "unknown polling rate: {hz} Hz"),
             Self::ReadOnlyAction => write!(f, "this button action cannot be set"),
             Self::InvalidShortcut(reason) => write!(f, "invalid shortcut: {reason}"),
+            Self::UnknownProfile(index) => write!(f, "unknown profile index: {index}"),
         }
     }
 }
@@ -146,6 +154,12 @@ impl Command {
                 MouseCommand::SetStageDpi(index, DpiStage { x, y })
             }
             Self::SetButton { button, action } => {
+                if let Action::Profile { index } = action
+                    && index >= ProfileAction::COUNT
+                {
+                    return Err(CommandError::UnknownProfile(index));
+                }
+
                 let action = action.editable().ok_or(CommandError::ReadOnlyAction)?;
 
                 MouseCommand::SetButton(button.into(), action)
@@ -166,6 +180,7 @@ impl Command {
             Self::SetAngle { degrees } => MouseCommand::SetAngle(degrees),
             Self::SetAngleEnabled { enabled } => MouseCommand::SetAngleEnabled(enabled),
             Self::SetFarDistance { enabled } => MouseCommand::SetFarDistance(enabled),
+            Self::SetProfile { index } => MouseCommand::SetProfile(index),
             Self::SetBackgroundPolling { enabled } => MouseCommand::SetBackgroundPolling(enabled),
             Self::Refresh => MouseCommand::Refresh,
         })

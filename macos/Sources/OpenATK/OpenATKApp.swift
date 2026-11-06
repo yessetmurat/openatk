@@ -30,6 +30,7 @@ struct OpenATKApp: App {
                 launchAtLogin: delegate.launchAtLogin
             )
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         // The app delegate decides at launch whether the window opens.
         .defaultLaunchBehavior(.suppressed)

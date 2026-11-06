@@ -9,6 +9,19 @@ import OpenATKBindings
 
 extension MouseModel {
 
+    private static let fixedActions: [Action] = [
+        .disabled, .mouseLeft, .mouseRight, .mouseMiddle, .mouseSide1, .mouseSide2,
+        .dpiCycle, .dpiPlus, .dpiMinus, .wheelUp, .wheelDown,
+    ]
+
+    /// The actions a button can be given: one per profile of the mouse, among the fixed ones.
+    public var actionChoices: [Action] {
+        let profileCount = snapshot?.profileCount ?? 0
+        let profiles = (0..<profileCount).map { Action.profile(index: $0) }
+
+        return Self.fixedActions + profiles + [.profileCycle, .shortcut]
+    }
+
     /// Whether the button's action can be changed here. `Other` actions keep their bytes.
     public func isEditable(button: MouseButton) -> Bool {
         guard let action = snapshot?.buttons.first(where: { $0.button == button })?.action else {

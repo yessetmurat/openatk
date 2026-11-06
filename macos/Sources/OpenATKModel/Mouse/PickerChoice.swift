@@ -21,13 +21,16 @@ public struct PickerChoice<Value: Hashable>: Hashable {
         self.isSelectable = isSelectable
     }
 
-    /// The entries of `options`, followed by `current` as a disabled entry when it is not listed.
-    static func list(options: [Value], current: Value?) -> [Self] {
+    /// The entries of `options`, in ascending order, with `current` in its place among them as a
+    /// disabled entry when it is not listed.
+    public static func list(options: [Value], current: Value?) -> [Self] where Value: Comparable {
         var choices = options.map { Self(value: $0, isSelectable: true) }
 
         if let current,
            !options.contains(current) {
-            choices.append(Self(value: current, isSelectable: false))
+            let index = options.firstIndex { $0 > current } ?? options.count
+
+            choices.insert(Self(value: current, isSelectable: false), at: index)
         }
 
         return choices

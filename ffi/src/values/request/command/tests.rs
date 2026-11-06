@@ -60,9 +60,41 @@ fn sensor_commands_convert() {
             Command::SetFarDistance { enabled: true },
             MouseCommand::SetFarDistance(true),
         ),
+        (
+            Command::SetProfile { index: 3 },
+            MouseCommand::SetProfile(3),
+        ),
     ];
 
     for (command, expected) in pairs {
         assert_eq!(command.into_core(), Ok(expected));
     }
+}
+
+#[test]
+fn set_profile_passes_any_index_through_for_the_core_to_refuse() {
+    let command = Command::SetProfile { index: 4 };
+
+    assert_eq!(command.into_core(), Ok(MouseCommand::SetProfile(4)));
+}
+
+#[test]
+fn profile_button_action_out_of_range_is_refused_by_index() {
+    let command = Command::SetButton {
+        button: MouseButton::Left,
+        action: Action::Profile { index: 4 },
+    };
+
+    assert_eq!(command.into_core(), Err(CommandError::UnknownProfile(4)));
+    assert!(CommandError::UnknownProfile(4).to_string().contains('4'));
+}
+
+#[test]
+fn profile_button_action_in_range_converts() {
+    let command = Command::SetButton {
+        button: MouseButton::Left,
+        action: Action::Profile { index: 3 },
+    };
+
+    assert!(command.into_core().is_ok());
 }

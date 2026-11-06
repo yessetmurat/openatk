@@ -14,10 +14,14 @@ pub struct SnapshotValue {
     pub model_name: String,
     /// Active profile.
     pub profile: u8,
+    /// Number of profiles the mouse has.
+    pub profile_count: u8,
     /// Battery charge, 0 to 100.
     pub percent: u8,
     /// Whether the mouse is charging.
     pub charging: bool,
+    /// Whether the mouse is on the cable, where the battery percent is inflated.
+    pub on_cable: bool,
     /// Current polling rate in hertz.
     pub polling_hz: u32,
     /// Polling rates on offer, in hertz.
@@ -102,8 +106,10 @@ impl From<&MouseSnapshot> for SnapshotValue {
         Self {
             model_name: snapshot.model_name.clone(),
             profile: snapshot.profile,
+            profile_count: snapshot.profile_count,
             percent: snapshot.battery.percent,
             charging: snapshot.battery.charging,
+            on_cable: snapshot.on_cable,
             polling_hz: snapshot.polling.hz(),
             polling_options_hz: snapshot
                 .polling_rates

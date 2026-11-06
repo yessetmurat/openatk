@@ -426,6 +426,7 @@ fn execute<L: Link>(
         MouseCommand::SetAngle(degrees) => mouse.set_angle(degrees),
         MouseCommand::SetAngleEnabled(on) => mouse.set_angle_enabled(on),
         MouseCommand::SetFarDistance(on) => mouse.set_far_distance(on),
+        MouseCommand::SetProfile(index) => mouse.set_profile(index),
         MouseCommand::Refresh | MouseCommand::SetBackgroundPolling(_) => Ok(()),
     }
 }

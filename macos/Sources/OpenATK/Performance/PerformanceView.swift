@@ -53,16 +53,16 @@ struct PerformanceView: View {
             set: { model.selectPolling(hz: $0) }
         )
 
-        return Picker(Strings.pollingRate, selection: selection) {
-            ForEach(snapshot.pollingOptionsHz, id: \.self) { hertz in
-                Text(Strings.hertz(hertz))
-                    .tag(hertz)
-            }
+        let choices = PickerChoice.list(
+            options: snapshot.pollingOptionsHz,
+            current: snapshot.pollingHz
+        )
 
-            if !snapshot.pollingOptionsHz.contains(snapshot.pollingHz) {
-                Text(Strings.hertz(snapshot.pollingHz))
-                    .selectionDisabled()
-                    .tag(snapshot.pollingHz)
+        return Picker(Strings.pollingRate, selection: selection) {
+            ForEach(choices, id: \.value) { choice in
+                Text(Strings.hertz(choice.value))
+                    .selectionDisabled(!choice.isSelectable)
+                    .tag(choice.value)
             }
         }
         .pickerStyle(.menu)

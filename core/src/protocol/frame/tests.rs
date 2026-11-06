@@ -127,3 +127,10 @@ fn far_distance_frame_holds_the_mode_with_no_check_byte() {
     assert_eq!(on[1..8], [0x16, 0, 0, 0, 10, 1, 0]);
     assert_eq!(off[1..8], [0x16, 0, 0, 0, 10, 0, 0]);
 }
+
+#[test]
+fn profile_frame_holds_the_index_with_length_one() {
+    let report = Frame::set_profile(3).to_report();
+
+    assert_eq!(report[1..8], [0x0f, 0, 0, 0, 1, 3, 0]);
+}

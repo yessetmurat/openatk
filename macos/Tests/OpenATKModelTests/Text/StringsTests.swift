@@ -18,6 +18,10 @@ struct StringsTests {
         #expect(Strings.profile(index: 255) == "Profile 256")
     }
 
+    @Test func profileTitleDoesNotOverflowTheByte() {
+        #expect(Strings.profileTitle(index: 255) == "Profile: 256")
+    }
+
     @Test(arguments: [
         (UInt16(10), "10 s"),
         (30, "30 s"),

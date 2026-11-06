@@ -35,6 +35,8 @@ pub enum MouseCommand {
     SetAngleEnabled(bool),
     /// Turn far distance mode on or off.
     SetFarDistance(bool),
+    /// Switch to the profile with this index, counted from 0.
+    SetProfile(u8),
     /// Read everything again, connecting first when needed.
     Refresh,
     /// Turn the background polling of link and battery on or off. It starts off. This

@@ -11,8 +11,8 @@ public enum MenuEntry: Equatable {
     /// Text that cannot be picked.
     case info(String)
 
-    /// A checkable value of the mouse.
-    case choice(MenuChoice)
+    /// A native submenu of checkable values, titled with the current one.
+    case submenu(title: String, items: [MenuChoice])
 
     /// A line between groups.
     case separator

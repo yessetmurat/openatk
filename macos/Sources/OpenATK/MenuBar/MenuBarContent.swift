@@ -27,8 +27,12 @@ struct MenuBarContent: View {
         switch entry {
         case .info(let title):
             Text(title)
-        case .choice(let choice):
-            toggle(choice)
+        case .submenu(let title, let items):
+            Menu(title) {
+                ForEach(items.indices, id: \.self) { index in
+                    toggle(items[index])
+                }
+            }
         case .separator:
             Divider()
         case .openWindow(let title):

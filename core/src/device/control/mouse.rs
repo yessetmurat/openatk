@@ -95,10 +95,7 @@ impl<L: Link, C> Mouse<L, C> {
     /// answers is `MouseError::Timeout`, except the dongle firmware: it is asked once per
     /// connection, and silence leaves it `None` after the one stall of a timed-out read.
     pub fn snapshot(&mut self) -> Result<MouseSnapshot, MouseError> {
-        let profile = self
-            .session
-            .exchange(&Frame::request(Command::GetCurrentConfig))?;
-        let profile = profile.payload()[0];
+        let profile = self.read_profile()?;
         let battery = self.battery()?;
         let block = self.read_block()?;
 
@@ -123,7 +120,9 @@ impl<L: Link, C> Mouse<L, C> {
             cid: self.model.cid,
             mid: self.model.mid,
             profile,
+            profile_count: self.model.profile_count,
             battery,
+            on_cable: self.path == DevicePath::Cable,
             polling: block.polling(),
             polling_rates: self.model.polling_rates(self.path).to_vec(),
             sensor,
@@ -399,6 +398,36 @@ impl<L: Link, C> Mouse<L, C> {
         Ok(())
     }
 
+    /// Switches the active profile, then reads it back: it is no EEPROM item. Switching to
+    /// the active profile sends nothing.
+    ///
+    /// # Errors
+    /// `InvalidValue` for an index not below the profile count, with no frame sent, any
+    /// exchange error, and [`MouseError::ProfileMismatch`] when another profile is active
+    /// afterwards.
+    pub fn set_profile(&mut self, index: u8) -> Result<(), MouseError> {
+        if index >= self.model.profile_count {
+            return Err(ProtocolError::InvalidValue("profile index").into());
+        }
+
+        if self.read_profile()? == index {
+            return Ok(());
+        }
+
+        self.session.exchange(&Frame::set_profile(index))?;
+
+        let actual = self.read_profile()?;
+
+        if actual != index {
+            return Err(MouseError::ProfileMismatch {
+                written: index,
+                actual,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Reads `len` EEPROM bytes at `address`.
     ///
     /// # Errors
@@ -537,6 +566,14 @@ impl<L: Link, C> Mouse<L, C> {
             major: reply.payload()[0],
             minor: reply.payload()[1],
         })
+    }
+
+    fn read_profile(&mut self) -> Result<u8, MouseError> {
+        let reply = self
+            .session
+            .exchange(&Frame::request(Command::GetCurrentConfig))?;
+
+        Ok(reply.payload()[0])
     }
 
     fn read_far_distance(&mut self) -> Result<u8, MouseError> {

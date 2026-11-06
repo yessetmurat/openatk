@@ -5,7 +5,7 @@ mod performance;
 mod tuning;
 
 pub use buttons::{
-    Button, ButtonAction, DpiAction, MouseAction, Shortcut, ShortcutKey, WheelAction,
+    Button, ButtonAction, DpiAction, MouseAction, ProfileAction, Shortcut, ShortcutKey, WheelAction,
 };
 pub use performance::{DpiStage, GeneralBlock, PollingRate, Sensor};
 pub use tuning::{AngleBlock, FirmwareVersion, LiftOff, SensorBlock, SleepBlock};

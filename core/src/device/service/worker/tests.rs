@@ -56,6 +56,10 @@ struct Device {
     opens: Vec<(DevicePath, usize)>,
     live_links: usize,
     far_distance: u8,
+    profile: u8,
+    push_on_profile_write: bool,
+    ignore_profile_write: bool,
+    status_on_code: Option<(u8, u8)>,
 }
 
 impl Device {
@@ -78,6 +82,10 @@ impl Device {
             opens: Vec::new(),
             live_links: 0,
             far_distance: 0,
+            profile: 0,
+            push_on_profile_write: false,
+            ignore_profile_write: false,
+            status_on_code: None,
         };
 
         // Polling 1000 Hz, one stage, current stage 0, then unknown bytes 6-9.
@@ -165,7 +173,14 @@ impl Device {
             0x1d => Some((0, vec![0x01, 0x0a])),
             _ if !self.online || self.mouse_silent => None,
             0x04 => Some((0, vec![BATTERY.percent, 0])),
-            0x0e => Some((0, vec![0])),
+            0x0e => Some((0, vec![self.profile])),
+            0x0f => {
+                if !self.ignore_profile_write {
+                    self.profile = request.payload()[0];
+                }
+
+                Some((0, vec![request.payload()[0]]))
+            }
             0x10 => Some((0, vec![self.cid, 50, 0x21])),
             0x12 => Some((0, vec![0x03, 0x01])),
             0x16 if self.reject_writes => Some((1, Vec::new())),
@@ -213,9 +228,23 @@ impl Link for FakeLink {
 
         let request = Frame::parse(report).expect("openatk sends valid frames");
 
+        if let Some((_, flags)) = device
+            .status_on_code
+            .filter(|(code, _)| *code == request.command_code())
+        {
+            device.status_on_code = None;
+            self.sender.send(status_report(flags)).expect("inbox alive");
+        }
+
         if let Some((status, data)) = device.answer(&request) {
             let bytes = reply(request.command_code(), status, request.address(), &data);
             self.sender.send(Input::Report(bytes)).expect("inbox alive");
+        }
+
+        if request.command_code() == Command::SetCurrentConfig.code()
+            && device.push_on_profile_write
+        {
+            self.sender.send(status_report(0x04)).expect("inbox alive");
         }
 
         if std::mem::take(&mut device.wake_after_next_send) {
@@ -1202,5 +1231,92 @@ fn unsupported_model_sends_no_radio_traffic_on_ticks() {
     rig.send(status_report(0x40));
     rig.wait_for_sends(IDENTITY_CODE, 1);
 
+    assert_eq!(rig.finish(), []);
+}
+
+// Proves one snapshot for a change the app made itself; it does not tell a merged flag from
+// a dropped one. The pushes below cover a flag that must not be lost.
+#[test]
+fn profile_change_gives_one_snapshot() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.push_on_profile_write = true;
+    let rig = Rig::start(device);
+    assert_eq!(rig.next_snapshot().profile, 0);
+
+    rig.command(MouseCommand::SetProfile(2));
+
+    assert_eq!(rig.next_snapshot().profile, 2);
+    assert_eq!(rig.device().sends_of(Command::GetCurrentConfig.code()), 4);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn button_press_profile_change_gives_a_snapshot() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    assert_eq!(rig.next_snapshot().profile, 0);
+    rig.device().profile = 3;
+
+    rig.send(status_report(0x04));
+
+    assert_eq!(rig.next_snapshot().profile, 3);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn out_of_range_profile_fails_without_a_write_and_gives_one_snapshot() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    rig.next_snapshot();
+
+    rig.command(MouseCommand::SetProfile(4));
+
+    assert!(matches!(rig.next_event(), MouseEvent::CommandFailed(_)));
+    assert_eq!(rig.next_snapshot().profile, 0);
+    assert_eq!(rig.device().sends_of(Command::SetCurrentConfig.code()), 0);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn profile_mismatch_fails_then_shows_the_real_profile() {
+    let mut device = Device::on(DevicePath::Dongle);
+    device.ignore_profile_write = true;
+    let rig = Rig::start(device);
+    rig.next_snapshot();
+
+    rig.command(MouseCommand::SetProfile(2));
+
+    assert_eq!(
+        rig.next_event(),
+        MouseEvent::CommandFailed(MouseError::ProfileMismatch {
+            written: 2,
+            actual: 0,
+        })
+    );
+    assert_eq!(rig.next_snapshot().profile, 0);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn push_during_the_snapshot_gives_a_further_snapshot() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    rig.next_snapshot();
+    rig.device().status_on_code = Some((BATTERY_CODE, 0x04));
+
+    rig.command(MouseCommand::SetProfile(2));
+
+    assert_eq!(rig.next_snapshot().profile, 2);
+    assert_eq!(rig.next_snapshot().profile, 2);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn push_after_the_settle_gives_a_further_snapshot() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    rig.next_snapshot();
+    rig.command(MouseCommand::SetProfile(2));
+    assert_eq!(rig.next_snapshot().profile, 2);
+
+    rig.send(status_report(0x04));
+
+    assert_eq!(rig.next_snapshot().profile, 2);
     assert_eq!(rig.finish(), []);
 }

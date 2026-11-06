@@ -15,6 +15,8 @@ pub enum Command {
     ReportMouseStatus = 0x0a,
     /// Active profile.
     GetCurrentConfig = 0x0e,
+    /// Select the active profile.
+    SetCurrentConfig = 0x0f,
     /// Identity: CID, MID and unique id bytes.
     GetMouseCidMid = 0x10,
     /// Firmware version.
@@ -38,6 +40,7 @@ impl Command {
             0x08 => Some(Self::GetEeprom),
             0x0a => Some(Self::ReportMouseStatus),
             0x0e => Some(Self::GetCurrentConfig),
+            0x0f => Some(Self::SetCurrentConfig),
             0x10 => Some(Self::GetMouseCidMid),
             0x12 => Some(Self::GetMouseVersion),
             0x16 => Some(Self::SetFarDistanceMode),

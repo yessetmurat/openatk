@@ -39,8 +39,12 @@ pub struct MouseSnapshot {
     pub mid: u8,
     /// Active profile.
     pub profile: u8,
+    /// Number of profiles the model has.
+    pub profile_count: u8,
     /// Battery state.
     pub battery: Battery,
+    /// Whether the mouse is on the cable path. Its battery percent is not trustworthy there.
+    pub on_cable: bool,
     /// Current polling rate.
     pub polling: PollingRate,
     /// Polling rates offered on the current path.

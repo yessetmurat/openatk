@@ -200,6 +200,22 @@ public final class MouseModel {
         send(.setCurrentStage(index: UInt8(index)))
     }
 
+    /// Makes the profile at `index` the active one, unless it already is. An index the mouse does
+    /// not offer is never written.
+    ///
+    /// The current value goes out again only after a failure: the switch may have worked and the
+    /// snapshot after it failed, so the mouse can be on another profile than the one shown. The
+    /// mouse is not written when it is already on `index`, and the snapshot still follows.
+    public func selectProfile(index: UInt8) {
+        guard let snapshot,
+              index != snapshot.profile || errorText != nil,
+              index < snapshot.profileCount else {
+            return
+        }
+
+        send(.setProfile(index: index))
+    }
+
     /// Adds `delta` to the number of stages, within ``stageCountRange``.
     public func changeStageCount(by delta: Int) {
         guard let snapshot else {
@@ -259,7 +275,7 @@ private extension Command {
         switch self {
         case .setPolling, .setCurrentStage, .setStageCount, .setStageDpi, .setButton, .setShortcut,
              .setLiftOff, .setDebounce, .setMotionSync, .setLinearCorrection, .setRippleControl,
-             .setSleep, .setAngle, .setAngleEnabled, .setFarDistance:
+             .setSleep, .setAngle, .setAngleEnabled, .setFarDistance, .setProfile:
             return true
         case .setBackgroundPolling, .refresh:
             return false

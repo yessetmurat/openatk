@@ -113,7 +113,7 @@ struct ButtonsView: View {
         )
 
         return Picker(Strings.button(value.button), selection: selection) {
-            ForEach(Self.choices, id: \.self) { action in
+            ForEach(model.actionChoices, id: \.self) { action in
                 Text(Strings.action(action))
                     .tag(action)
             }
@@ -123,10 +123,5 @@ struct ButtonsView: View {
         .fixedSize()
         .id(model.refreshCount)
     }
-
-    private static let choices: [Action] = [
-        .disabled, .mouseLeft, .mouseRight, .mouseMiddle, .mouseSide1, .mouseSide2,
-        .dpiCycle, .dpiPlus, .dpiMinus, .wheelUp, .wheelDown, .shortcut,
-    ]
 
 }

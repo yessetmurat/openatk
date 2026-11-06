@@ -89,6 +89,14 @@ struct MouseModelTests {
         #expect(model.snapshot == nil)
     }
 
+    @Test func batteryEventOnCableStaysCharging() {
+        model.apply(.snapshot(snapshot: .sample(onCable: true)))
+
+        model.apply(.battery(percent: 85, charging: false))
+
+        #expect(model.snapshot?.batteryDisplay == .charging)
+    }
+
     @Test func batteryUpdatesSnapshot() {
         model.apply(.snapshot(snapshot: .sample()))
 

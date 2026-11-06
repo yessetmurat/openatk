@@ -1,4 +1,4 @@
-use openatk_core::settings::{DpiAction, MouseAction, WheelAction};
+use openatk_core::settings::{DpiAction, MouseAction, ProfileAction, WheelAction};
 
 use super::*;
 
@@ -16,6 +16,8 @@ fn every_editable_action_round_trips() {
         ButtonAction::Dpi(DpiAction::Minus),
         ButtonAction::Wheel(WheelAction::Up),
         ButtonAction::Wheel(WheelAction::Down),
+        ButtonAction::Profile(ProfileAction::Profile(2)),
+        ButtonAction::Profile(ProfileAction::Cycle),
         ButtonAction::Shortcut,
     ];
 

@@ -17,6 +17,9 @@ public struct MenuChoice: Equatable {
         /// A polling rate.
         case rate(hertz: UInt32)
 
+        /// The profile at `index`, counted from 0.
+        case profile(index: UInt8)
+
     }
 
     /// The item's text.

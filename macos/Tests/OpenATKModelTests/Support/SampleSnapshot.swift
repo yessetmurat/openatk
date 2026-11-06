@@ -12,15 +12,20 @@ extension SnapshotValue {
 
     /// A snapshot like the real mouse's, with the given rate and equal-axis stages.
     static func sample(
+        profile: UInt8 = 1,
         pollingHz: UInt32 = 250,
         stages: [UInt32] = [400, 800, 1200, 1600],
-        buttons: [ButtonValue] = []
+        buttons: [ButtonValue] = [],
+        charging: Bool = false,
+        onCable: Bool = false
     ) -> Self {
         SnapshotValue(
             modelName: "Sample Mouse",
-            profile: 1,
+            profile: profile,
+            profileCount: 4,
             percent: 87,
-            charging: false,
+            charging: charging,
+            onCable: onCable,
             pollingHz: pollingHz,
             pollingOptionsHz: [125, 250, 500, 1000],
             dpiMin: 50,

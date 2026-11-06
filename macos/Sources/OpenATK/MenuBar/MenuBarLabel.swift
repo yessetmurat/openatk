@@ -16,7 +16,13 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack {
             Image(systemName: "computermouse")
-            Text(MenuContent.title(snapshot: delegate.model.snapshot))
+
+            if MenuContent.isCharging(snapshot: delegate.model.snapshot) {
+                Image(systemName: "bolt.fill")
+                    .accessibilityLabel(Strings.charging)
+            } else {
+                Text(MenuContent.title(snapshot: delegate.model.snapshot))
+            }
         }
     }
 
