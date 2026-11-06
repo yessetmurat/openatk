@@ -27,7 +27,7 @@ Other models share the protocol, but openatk refuses to change their settings un
 
 ## Building
 
-You need a Rust toolchain and Xcode.
+You need a Rust toolchain and Xcode 26 or later.
 
 The Swift bindings and the framework are generated and ignored by git, so on a fresh checkout run this before the tests:
 

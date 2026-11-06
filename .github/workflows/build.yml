@@ -15,9 +15,7 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
       - name: Build
-        run: |
-          macos/scripts/build_rust.sh
-          swift build --package-path macos
+        run: macos/scripts/build_app.sh
       - name: Test
         run: |
           cargo test

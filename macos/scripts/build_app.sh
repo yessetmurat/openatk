@@ -19,6 +19,16 @@ cp "$macos/Resources/Info.plist" "$app/Contents/Info.plist"
 mkdir "$app/Contents/Resources/fonts"
 cp "$macos"/Resources/fonts/*.ttf "$macos/Resources/fonts/OFL.txt" "$app/Contents/Resources/fonts/"
 
+# Compiles the Icon Composer source into Assets.car and AppIcon.icns. A wrong --app-icon name makes
+# actool exit 0 without writing anything, so check for the output.
+xcrun actool "$macos/Resources/AppIcon.icon" \
+    --compile "$app/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 15.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$macos/build/icon-info.plist"
+test -f "$app/Contents/Resources/Assets.car"
+
 # arm64 refuses unsigned code. An ad-hoc signature is enough to run, but its identity is the
 # cdhash, so every rebuild loses the Input Monitoring grant. Set OPENATK_SIGN_IDENTITY to a
 # stable signing identity to keep the grant across rebuilds.
