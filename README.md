@@ -62,7 +62,7 @@ The app needs Input Monitoring, because the device exposes keyboard collections.
 
 ### macOS version
 
-Built for macOS 14 and later, but tested only on macOS 27.
+Built for macOS 15 and later, but tested only on macOS 27.
 
 ## Settings tool
 

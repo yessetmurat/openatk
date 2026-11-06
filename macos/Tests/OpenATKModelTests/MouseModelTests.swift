@@ -134,6 +134,28 @@ struct MouseModelTests {
         #expect(sink.commands == [.refresh])
     }
 
+    @Test func sensorCommandsStayPendingUntilTheirResult() {
+        let commands: [Command] = [
+            .setLiftOff(tenths: 12),
+            .setDebounce(ms: 4),
+            .setMotionSync(enabled: true),
+            .setLinearCorrection(enabled: true),
+            .setRippleControl(enabled: true),
+            .setSleep(seconds: 60),
+            .setAngle(degrees: -5),
+            .setAngleEnabled(enabled: true),
+            .setFarDistance(enabled: true)
+        ]
+
+        for command in commands {
+            let model = MouseModel(sink: RecordingSink())
+
+            model.send(command)
+
+            #expect(model.isPending, "\(command)")
+        }
+    }
+
     @Test func pickerShowsRealRateWhilePending() {
         model.apply(.snapshot(snapshot: .sample()))
 
@@ -184,23 +206,23 @@ struct MouseModelTests {
     @Test func stageTextShowsTheMouseValue() {
         model.apply(.snapshot(snapshot: .sample()))
 
-        #expect(model.stageText(index: 1) == "800")
+        #expect(model.fieldText(.stage(1)) == "800")
     }
 
     @Test func stageTextShowsTheDraftOnlyOnItsStage() {
         model.apply(.snapshot(snapshot: .sample()))
 
-        model.editStage(index: 1, text: "90")
+        model.editField(.stage(1), text: "90")
 
-        #expect(model.stageText(index: 1) == "90")
-        #expect(model.stageText(index: 2) == "1200")
+        #expect(model.fieldText(.stage(1)) == "90")
+        #expect(model.fieldText(.stage(2)) == "1200")
     }
 
     @Test func commitWithoutEditSendsNothing() {
         model.apply(.snapshot(snapshot: .sample(stages: [400, 12345])))
 
-        model.commitStage(index: 0)
-        model.commitStage(index: 1)
+        model.commitField(.stage(0))
+        model.commitField(.stage(1))
 
         #expect(sink.commands.isEmpty)
         #expect(!model.isPending)
@@ -209,8 +231,8 @@ struct MouseModelTests {
     @Test func commitOfUnchangedTextSendsNothing() {
         model.apply(.snapshot(snapshot: .sample(stages: [400, 12345])))
 
-        model.editStage(index: 1, text: "12345")
-        model.commitStage(index: 1)
+        model.editField(.stage(1), text: "12345")
+        model.commitField(.stage(1))
 
         #expect(sink.commands.isEmpty)
         #expect(!model.isPending)
@@ -218,112 +240,112 @@ struct MouseModelTests {
 
     @Test func commitSnapsToGrid() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "1234")
+        model.editField(.stage(1), text: "1234")
 
-        model.commitStage(index: 1)
+        model.commitField(.stage(1))
 
         #expect(sink.commands == [.setStageDpi(index: 1, x: 1230, y: 1230)])
     }
 
     @Test func committedDraftStaysWhilePending() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "1234")
+        model.editField(.stage(1), text: "1234")
 
-        model.commitStage(index: 1)
+        model.commitField(.stage(1))
 
         #expect(model.isPending)
-        #expect(model.stageText(index: 1) == "1234")
+        #expect(model.fieldText(.stage(1)) == "1234")
     }
 
     @Test func committedDraftClearsOnSnapshot() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "1234")
-        model.commitStage(index: 1)
+        model.editField(.stage(1), text: "1234")
+        model.commitField(.stage(1))
 
         model.apply(.snapshot(snapshot: .sample(stages: [400, 1230, 1200, 1600])))
 
-        #expect(model.stageText(index: 1) == "1230")
+        #expect(model.fieldText(.stage(1)) == "1230")
     }
 
     @Test func committedDraftClearsOnFailure() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "1234")
-        model.commitStage(index: 1)
+        model.editField(.stage(1), text: "1234")
+        model.commitField(.stage(1))
 
         model.apply(.commandFailed(message: "timeout"))
 
-        #expect(model.stageText(index: 1) == "800")
+        #expect(model.fieldText(.stage(1)) == "800")
     }
 
     @Test func committedDraftIsNotSentTwice() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "1234")
-        model.commitStage(index: 1)
+        model.editField(.stage(1), text: "1234")
+        model.commitField(.stage(1))
 
-        model.commitStage(index: 1)
-        model.discardStageEdit()
+        model.commitField(.stage(1))
+        model.discardFieldEdit()
 
         #expect(sink.commands == [.setStageDpi(index: 1, x: 1230, y: 1230)])
-        #expect(model.stageText(index: 1) == "1234")
+        #expect(model.fieldText(.stage(1)) == "1234")
     }
 
     @Test func commitOfAnotherStageSendsNothing() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "1234")
+        model.editField(.stage(1), text: "1234")
 
-        model.commitStage(index: 2)
+        model.commitField(.stage(2))
 
         #expect(sink.commands.isEmpty)
     }
 
     @Test func commitSnappingToShownValueSendsNothing() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "804")
+        model.editField(.stage(1), text: "804")
 
-        model.commitStage(index: 1)
+        model.commitField(.stage(1))
 
         #expect(sink.commands.isEmpty)
         #expect(!model.isPending)
-        #expect(model.stageText(index: 1) == "800")
+        #expect(model.fieldText(.stage(1)) == "800")
     }
 
     @Test func nonNumericTextSendsNothing() {
         model.apply(.snapshot(snapshot: .sample()))
 
         for text in ["", "abc", "12a", "-5", "1.5", "99999999999"] {
-            model.editStage(index: 0, text: text)
-            model.commitStage(index: 0)
+            model.editField(.stage(0), text: text)
+            model.commitField(.stage(0))
         }
 
         #expect(sink.commands.isEmpty)
         #expect(!model.isPending)
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
     }
 
     @Test func stageWithSplitAxesCannotCommit() {
         var snapshot = SnapshotValue.sample()
         snapshot.stages[0] = StageValue(x: 400, y: 800)
         model.apply(.snapshot(snapshot: snapshot))
-        model.editStage(index: 0, text: "1000")
+        model.editField(.stage(0), text: "1000")
 
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
         #expect(sink.commands.isEmpty)
     }
 
     @Test func commitOutsideStagesSendsNothing() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 4, text: "800")
+        model.editField(.stage(4), text: "800")
 
-        model.commitStage(index: 4)
+        model.commitField(.stage(4))
 
         #expect(sink.commands.isEmpty)
     }
 
     @Test func commitWithoutMouseSendsNothing() {
-        model.editStage(index: 0, text: "800")
+        model.editField(.stage(0), text: "800")
 
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
         #expect(sink.commands.isEmpty)
     }
@@ -332,141 +354,141 @@ struct MouseModelTests {
 
     @Test func draftClearedByFailedWrite() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
         model.apply(.commandFailed(message: "timeout"))
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
         #expect(sink.commands.isEmpty)
     }
 
     @Test func draftClearedByIdenticalSnapshot() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
         model.apply(.snapshot(snapshot: .sample()))
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
         #expect(sink.commands.isEmpty)
     }
 
     @Test func draftClearedByNotConnected() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
         model.apply(.notConnected)
         model.apply(.battery(percent: 50, charging: false))
         model.apply(.snapshot(snapshot: .sample()))
 
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
     }
 
     @Test func draftKeptByBattery() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
         model.apply(.battery(percent: 50, charging: false))
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
         #expect(sink.commands == [.setStageDpi(index: 0, x: 900, y: 900)])
     }
 
     @Test func draftClearedByOtherWrite() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
         model.selectPolling(hz: 500)
         model.apply(.snapshot(snapshot: .sample()))
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
         #expect(sink.commands == [.setPolling(hz: 500)])
     }
 
     @Test func draftKeptByRefreshUntilItsSnapshot() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
         model.send(.refresh)
 
-        #expect(model.stageText(index: 0) == "900")
+        #expect(model.fieldText(.stage(0)) == "900")
     }
 
     @Test func editIgnoredWhilePending() {
         model.apply(.snapshot(snapshot: .sample()))
         model.selectPolling(hz: 500)
 
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
         model.apply(.snapshot(snapshot: .sample()))
-        model.commitStage(index: 0)
+        model.commitField(.stage(0))
 
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
         #expect(sink.commands == [.setPolling(hz: 500)])
     }
 
     @Test func echoFromAnotherFieldKeepsDraft() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "900")
+        model.editField(.stage(1), text: "900")
 
-        model.editStage(index: 2, text: "1200")
-        model.commitStage(index: 1)
+        model.editField(.stage(2), text: "1200")
+        model.commitField(.stage(1))
 
         #expect(sink.commands == [.setStageDpi(index: 1, x: 900, y: 900)])
     }
 
     @Test func editInAnotherFieldCommitsTheLiveDraft() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "900")
+        model.editField(.stage(1), text: "900")
 
-        model.editStage(index: 2, text: "1500")
+        model.editField(.stage(2), text: "1500")
 
         #expect(sink.commands == [.setStageDpi(index: 1, x: 900, y: 900)])
     }
 
     @Test func editThatCommitsAWriteIsDropped() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "900")
+        model.editField(.stage(1), text: "900")
 
-        model.editStage(index: 2, text: "1500")
+        model.editField(.stage(2), text: "1500")
         model.apply(.snapshot(snapshot: .sample()))
-        model.commitStage(index: 2)
+        model.commitField(.stage(2))
 
-        #expect(model.stageText(index: 2) == "1200")
+        #expect(model.fieldText(.stage(2)) == "1200")
         #expect(sink.commands == [.setStageDpi(index: 1, x: 900, y: 900)])
     }
 
     @Test func editInAnotherFieldIsKeptWhenNothingWasWritten() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "abc")
+        model.editField(.stage(1), text: "abc")
 
-        model.editStage(index: 2, text: "1500")
+        model.editField(.stage(2), text: "1500")
 
-        #expect(model.stageText(index: 1) == "800")
-        #expect(model.stageText(index: 2) == "1500")
+        #expect(model.fieldText(.stage(1)) == "800")
+        #expect(model.fieldText(.stage(2)) == "1500")
         #expect(sink.commands.isEmpty)
     }
 
     @Test func retypingTheShownValueSendsNothing() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 1, text: "900")
+        model.editField(.stage(1), text: "900")
 
-        model.editStage(index: 1, text: "800")
-        model.commitStage(index: 1)
+        model.editField(.stage(1), text: "800")
+        model.commitField(.stage(1))
 
         #expect(sink.commands.isEmpty)
-        #expect(model.stageText(index: 1) == "800")
+        #expect(model.fieldText(.stage(1)) == "800")
     }
 
     @Test func escapeDiscardsDraft() {
         model.apply(.snapshot(snapshot: .sample()))
-        model.editStage(index: 0, text: "900")
+        model.editField(.stage(0), text: "900")
 
-        model.discardStageEdit()
-        model.commitStage(index: 0)
+        model.discardFieldEdit()
+        model.commitField(.stage(0))
 
-        #expect(model.stageText(index: 0) == "400")
+        #expect(model.fieldText(.stage(0)) == "400")
         #expect(sink.commands.isEmpty)
     }
 

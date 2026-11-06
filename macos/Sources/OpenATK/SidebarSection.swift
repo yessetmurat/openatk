@@ -12,6 +12,7 @@ enum SidebarSection: CaseIterable {
 
     case performance
     case buttons
+    case sensor
     case settings
 
     var title: String {
@@ -20,6 +21,8 @@ enum SidebarSection: CaseIterable {
             Strings.performance
         case .buttons:
             Strings.buttons
+        case .sensor:
+            Strings.sensor
         case .settings:
             Strings.settings
         }
@@ -31,6 +34,8 @@ enum SidebarSection: CaseIterable {
             "gauge.with.dots.needle.67percent"
         case .buttons:
             "computermouse"
+        case .sensor:
+            "scope"
         case .settings:
             "gearshape"
         }

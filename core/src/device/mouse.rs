@@ -1,13 +1,19 @@
 //! Reads and verified writes of the mouse settings.
 
-use crate::device::{Battery, DevicePath, Inbox, Link, Model, MouseError, MouseSnapshot, Session};
-use crate::protocol::{Command, Frame, ProtocolError, address};
-use crate::settings::{Button, ButtonAction, DpiStage, GeneralBlock, PollingRate, Shortcut};
+use crate::device::{
+    AngleValue, Battery, DevicePath, Inbox, Link, Model, MouseError, MouseSnapshot, Session,
+};
+use crate::protocol::{Command, Frame, ProtocolError, address, check};
+use crate::settings::{
+    AngleBlock, Button, ButtonAction, DpiStage, FirmwareVersion, GeneralBlock, LiftOff,
+    PollingRate, SensorBlock, Shortcut, SleepBlock,
+};
 
 const STAGE_LEN: usize = 4;
 const PAIR_LEN: usize = 8;
 const PAIR_COUNT: usize = 4;
 const MAX_READ: u8 = 10;
+const SECONDS_PER_SLEEP_BYTE: u16 = 10;
 
 /// A connected, identified mouse.
 #[derive(Debug)]
@@ -80,6 +86,8 @@ impl<L: Link, C> Mouse<L, C> {
     /// # Errors
     /// Any exchange error, and a protocol error for a malformed block, a bad check on a
     /// used DPI stage, a button or a shortcut. A bad check on an unused stage is ignored.
+    /// A sensor block, firmware or far distance read the mouse rejects, and a sensor value
+    /// that cannot be read, leave that field `None`.
     pub fn snapshot(&mut self) -> Result<MouseSnapshot, MouseError> {
         let profile = self
             .session
@@ -97,6 +105,12 @@ impl<L: Link, C> Mouse<L, C> {
         let buttons = self.read_buttons()?;
         let shortcuts = self.read_shortcuts(&buttons)?;
 
+        let firmware = rejected_as_none(self.read_firmware())?;
+        let far_distance = rejected_as_none(self.read_far_distance())?.and_then(check::flag);
+        let lift_off = rejected_as_none(self.read_lift_off())?;
+        let sensor_block = rejected_as_none(self.read_sensor_block())?;
+        let angle = self.read_angle(firmware)?;
+
         Ok(MouseSnapshot {
             model_name: self.model.name.to_owned(),
             cid: self.model.cid,
@@ -110,6 +124,19 @@ impl<L: Link, C> Mouse<L, C> {
             stages,
             buttons,
             shortcuts,
+            firmware,
+            lift_off_tenths: lift_off.and_then(|item| item.millimetres_tenths()),
+            debounce_ms: sensor_block.and_then(|block| block.debounce_ms()),
+            debounce_options_ms: self.model.debounce_ms.to_vec(),
+            motion_sync: sensor_block.and_then(|block| block.motion_sync()),
+            linear_correction: sensor_block.and_then(|block| block.linear_correction()),
+            ripple_control: sensor_block.and_then(|block| block.ripple_control()),
+            sleep_seconds: sensor_block
+                .and_then(|block| block.led_off_byte())
+                .map(|byte| u16::from(byte) * SECONDS_PER_SLEEP_BYTE),
+            sleep_options_seconds: self.model.sleep_seconds.to_vec(),
+            angle,
+            far_distance,
         })
     }
 
@@ -235,6 +262,135 @@ impl<L: Link, C> Mouse<L, C> {
         self.write_eeprom(button.address(), &action)
     }
 
+    /// Sets the lift-off height, in tenths of a millimetre.
+    ///
+    /// # Errors
+    /// `InvalidValue` for a height outside 7..=17 or a stored height that cannot be read, and
+    /// any read or write error.
+    pub fn set_lift_off(&mut self, tenths: u8) -> Result<(), MouseError> {
+        let item = self.read_lift_off()?.with_tenths(tenths)?;
+
+        self.write_eeprom(address::LIFT_OFF, item.as_bytes())
+    }
+
+    /// Sets the debounce time, keeping the other pairs of the sensor block.
+    ///
+    /// # Errors
+    /// `InvalidValue` for a time the model does not offer, `BadCheck` when the stored time
+    /// is corrupt, and any read or write error.
+    pub fn set_debounce(&mut self, ms: u8) -> Result<(), MouseError> {
+        if !self.model.debounce_ms.contains(&ms) {
+            return Err(ProtocolError::InvalidValue("debounce time").into());
+        }
+
+        let block = self.read_sensor_block()?.with_debounce_ms(ms)?;
+
+        self.write_eeprom(address::SENSOR_BLOCK, block.as_bytes())
+    }
+
+    /// Turns motion sync on or off, keeping the other pairs of the sensor block.
+    ///
+    /// # Errors
+    /// `BadCheck` or `InvalidValue` when the stored value cannot be read, and any read or
+    /// write error.
+    pub fn set_motion_sync(&mut self, on: bool) -> Result<(), MouseError> {
+        let block = self.read_sensor_block()?.with_motion_sync(on)?;
+
+        self.write_eeprom(address::SENSOR_BLOCK, block.as_bytes())
+    }
+
+    /// Turns linear correction on or off, keeping the other pairs of the sensor block.
+    ///
+    /// # Errors
+    /// `BadCheck` or `InvalidValue` when the stored value cannot be read, and any read or
+    /// write error.
+    pub fn set_linear_correction(&mut self, on: bool) -> Result<(), MouseError> {
+        let block = self.read_sensor_block()?.with_linear_correction(on)?;
+
+        self.write_eeprom(address::SENSOR_BLOCK, block.as_bytes())
+    }
+
+    /// Turns ripple control on or off, keeping the other pairs of the sensor block.
+    ///
+    /// # Errors
+    /// `BadCheck` or `InvalidValue` when the stored value cannot be read, and any read or
+    /// write error.
+    pub fn set_ripple_control(&mut self, on: bool) -> Result<(), MouseError> {
+        let block = self.read_sensor_block()?.with_ripple_control(on)?;
+
+        self.write_eeprom(address::SENSOR_BLOCK, block.as_bytes())
+    }
+
+    /// Sets the sleep time as ATK HUB does: the LED off time in the sensor block first, then
+    /// the sensor sleep time with its enabled flag. Both blocks are read and checked before
+    /// the first write.
+    ///
+    /// When the second write fails the LED off time stays changed, and a snapshot shows only
+    /// that half. Setting the same time again writes both blocks and heals it.
+    ///
+    /// # Errors
+    /// `InvalidValue` for a time the model does not offer, `BadCheck` or `InvalidValue` when
+    /// a stored value of these three cannot be read, and any read or write error.
+    pub fn set_sleep(&mut self, seconds: u16) -> Result<(), MouseError> {
+        if !self.model.sleep_seconds.contains(&seconds) {
+            return Err(ProtocolError::InvalidValue("sleep time").into());
+        }
+
+        let byte = u8::try_from(seconds / SECONDS_PER_SLEEP_BYTE)
+            .map_err(|_| ProtocolError::InvalidValue("sleep time"))?;
+        let sensor_block = self.read_sensor_block()?.with_led_off_byte(byte)?;
+        let sleep_block = self.read_sleep_block()?.with_sleep(byte)?;
+
+        self.write_eeprom(address::SENSOR_BLOCK, sensor_block.as_bytes())?;
+
+        self.write_eeprom(address::SLEEP_BLOCK, sleep_block.as_bytes())
+    }
+
+    /// Sets the sensor angle in degrees, keeping the switch.
+    ///
+    /// # Errors
+    /// `InvalidValue` for an angle outside -30..=30 or a firmware without the angle,
+    /// `BadCheck` when the stored angle is corrupt, and any read or write error.
+    pub fn set_angle(&mut self, degrees: i8) -> Result<(), MouseError> {
+        let block = self.read_angle_block_to_change()?.with_angle(degrees)?;
+
+        self.write_eeprom(address::ANGLE_BLOCK, block.as_bytes())
+    }
+
+    /// Turns the sensor angle on or off, keeping the angle.
+    ///
+    /// # Errors
+    /// `InvalidValue` for a firmware without the angle, `BadCheck` or `InvalidValue` when the
+    /// stored switch cannot be read, and any read or write error.
+    pub fn set_angle_enabled(&mut self, on: bool) -> Result<(), MouseError> {
+        let block = self.read_angle_block_to_change()?.with_enabled(on)?;
+
+        self.write_eeprom(address::ANGLE_BLOCK, block.as_bytes())
+    }
+
+    /// Turns far distance mode on or off, then reads it back: it is no EEPROM item.
+    ///
+    /// # Errors
+    /// `InvalidValue` when the stored mode is neither 0 nor 1, any exchange error, with
+    /// nothing sent after a failed read, and [`MouseError::FarDistanceMismatch`] when the
+    /// mouse holds another mode afterwards.
+    pub fn set_far_distance(&mut self, enabled: bool) -> Result<(), MouseError> {
+        if check::flag(self.read_far_distance()?).is_none() {
+            return Err(ProtocolError::InvalidValue("far distance mode").into());
+        }
+
+        self.session.exchange(&Frame::set_far_distance(enabled))?;
+
+        let written = u8::from(enabled);
+        let actual = self.read_far_distance()?;
+
+        if actual != written {
+            return Err(MouseError::FarDistanceMismatch { written, actual });
+        }
+
+        Ok(())
+    }
+
     /// Reads `len` EEPROM bytes at `address`.
     ///
     /// # Errors
@@ -278,10 +434,79 @@ impl<L: Link, C> Mouse<L, C> {
         self.write_eeprom(address::GENERAL_BLOCK, block.as_bytes())
     }
 
-    fn read_pair(&mut self, address: u16) -> Result<[u8; PAIR_LEN], MouseError> {
-        let bytes = self.read_eeprom(address, PAIR_LEN as u8)?;
+    fn read_array<const N: usize>(&mut self, address: u16) -> Result<[u8; N], MouseError> {
+        let bytes = self.read_eeprom(address, N as u8)?;
 
         Ok(bytes.try_into().map_err(|_| ProtocolError::BadLength)?)
+    }
+
+    fn read_pair(&mut self, address: u16) -> Result<[u8; PAIR_LEN], MouseError> {
+        self.read_array(address)
+    }
+
+    fn read_lift_off(&mut self) -> Result<LiftOff, MouseError> {
+        Ok(LiftOff::from_raw(self.read_array(address::LIFT_OFF)?))
+    }
+
+    fn read_sensor_block(&mut self) -> Result<SensorBlock, MouseError> {
+        Ok(SensorBlock::from_raw(
+            self.read_array(address::SENSOR_BLOCK)?,
+        ))
+    }
+
+    fn read_sleep_block(&mut self) -> Result<SleepBlock, MouseError> {
+        Ok(SleepBlock::from_raw(self.read_array(address::SLEEP_BLOCK)?))
+    }
+
+    fn read_angle_block(&mut self) -> Result<AngleBlock, MouseError> {
+        Ok(AngleBlock::from_raw(self.read_array(address::ANGLE_BLOCK)?))
+    }
+
+    /// Reads the angle for a snapshot, with no exchange when `firmware` has no angle.
+    fn read_angle(
+        &mut self,
+        firmware: Option<FirmwareVersion>,
+    ) -> Result<Option<AngleValue>, MouseError> {
+        if !self.model.supports_angle(firmware) {
+            return Ok(None);
+        }
+
+        let block = rejected_as_none(self.read_angle_block())?;
+
+        Ok(block.map(|block| AngleValue {
+            degrees: block.angle(),
+            enabled: block.enabled(),
+        }))
+    }
+
+    /// Asks the mouse for its firmware and reads the angle block when it offers the angle.
+    fn read_angle_block_to_change(&mut self) -> Result<AngleBlock, MouseError> {
+        let firmware = rejected_as_none(self.read_firmware())?;
+
+        if !self.model.supports_angle(firmware) {
+            return Err(ProtocolError::InvalidValue("angle on this firmware").into());
+        }
+
+        self.read_angle_block()
+    }
+
+    fn read_firmware(&mut self) -> Result<FirmwareVersion, MouseError> {
+        let reply = self
+            .session
+            .exchange(&Frame::request(Command::GetMouseVersion))?;
+
+        Ok(FirmwareVersion {
+            major: reply.payload()[0],
+            minor: reply.payload()[1],
+        })
+    }
+
+    fn read_far_distance(&mut self) -> Result<u8, MouseError> {
+        let reply = self
+            .session
+            .exchange(&Frame::request(Command::GetFarDistanceMode))?;
+
+        Ok(reply.payload()[0])
     }
 
     fn read_stages(&mut self) -> Result<[u8; PAIR_LEN * PAIR_COUNT], MouseError> {
@@ -371,6 +596,15 @@ impl<L: Link, C> Mouse<L, C> {
         }
 
         Ok(())
+    }
+}
+
+/// Turns a rejected read into `None`: older firmware may refuse the sensor reads.
+fn rejected_as_none<T>(result: Result<T, MouseError>) -> Result<Option<T>, MouseError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(MouseError::Rejected(_)) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 

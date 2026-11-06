@@ -8,6 +8,7 @@
 import AppKit
 import OpenATKBindings
 import OpenATKModel
+import ServiceManagement
 
 /// Owns the model and the preferences, so they work with no window open.
 @MainActor
@@ -16,9 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = Preferences(defaults: .standard)
     let model = AppDelegate.makeModel()
 
-    /// Opens the window. Only a view can reach `openWindow`, so `MenuBarLabel` sets this. Without
-    /// the menu bar icon closing the window quits, so no reopen depends on it.
-    var openMainWindow: (() -> Void)?
+    let launchAtLogin = LaunchAtLoginSetting(service: SMAppService.mainApp)
+
+    /// Opens the window. Only a view can reach `openWindow`, so `MenuBarLabel` sets this.
+    private var openMainWindow: (() -> Void)?
+
+    private var launchWindow = LaunchWindow()
+    private var mainWindowClosed = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         preferences.applyBackgroundPolling(to: model)
@@ -29,11 +34,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.willCloseNotification,
             object: nil
         )
+
+        let opensNow = launchWindow.decide(
+            isLoginStart: isLoginStart,
+            menuBarIcon: preferences.menuBarIcon
+        )
+
+        applyDockPolicy(windowOpen: launchWindow.wantsWindow)
+
+        if opensNow {
+            showMainWindow()
+        }
+    }
+
+    /// Takes the action that opens the window, and uses it if the launch was waiting for it.
+    func windowOpenerReady(_ open: @escaping () -> Void) {
+        openMainWindow = open
+
+        if launchWindow.closureReady() {
+            showMainWindow()
+        }
     }
 
     /// With the icon off there is no way back to a closed window, so the app quits.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        !preferences.menuBarIcon
+        preferences.quitsAfterLastWindowClosed(mainWindowClosed: mainWindowClosed)
     }
 
     /// With the icon off nothing polls in the background, so the app catches up here.
@@ -68,7 +93,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        mainWindowClosed = true
         applyDockPolicy(windowOpen: false)
+    }
+
+    /// Whether the app was started as a login item. The open event is current only while
+    /// `applicationDidFinishLaunching` runs: it is `nil` in `applicationWillFinishLaunching` and
+    /// when the scenes are built.
+    private var isLoginStart: Bool {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+
+        return LoginStart.isLoginStart(
+            eventID: event?.eventID,
+            launchKind: event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue
+        )
     }
 
     private func applyDockPolicy(windowOpen: Bool) {

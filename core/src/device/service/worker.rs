@@ -417,6 +417,15 @@ fn execute<L: Link>(
         MouseCommand::SetStageDpi(index, stage) => mouse.set_stage_dpi(index, stage),
         MouseCommand::SetButton(button, action) => mouse.set_button(button, action),
         MouseCommand::SetShortcut(button, shortcut) => mouse.set_shortcut(button, &shortcut),
+        MouseCommand::SetLiftOff(tenths) => mouse.set_lift_off(tenths),
+        MouseCommand::SetDebounce(ms) => mouse.set_debounce(ms),
+        MouseCommand::SetMotionSync(on) => mouse.set_motion_sync(on),
+        MouseCommand::SetLinearCorrection(on) => mouse.set_linear_correction(on),
+        MouseCommand::SetRippleControl(on) => mouse.set_ripple_control(on),
+        MouseCommand::SetSleep(seconds) => mouse.set_sleep(seconds),
+        MouseCommand::SetAngle(degrees) => mouse.set_angle(degrees),
+        MouseCommand::SetAngleEnabled(on) => mouse.set_angle_enabled(on),
+        MouseCommand::SetFarDistance(on) => mouse.set_far_distance(on),
         MouseCommand::Refresh | MouseCommand::SetBackgroundPolling(_) => Ok(()),
     }
 }

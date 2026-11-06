@@ -22,6 +22,7 @@ struct MainWindow: View {
 
     let model: MouseModel
     let preferences: Preferences
+    let launchAtLogin: LaunchAtLoginSetting
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -43,7 +44,7 @@ struct MainWindow: View {
             }
 
             if scenePhase == .background {
-                model.discardStageEdit()
+                model.discardFieldEdit()
             }
         }
     }
@@ -81,13 +82,15 @@ struct MainWindow: View {
             PerformanceView(model: model)
         case .buttons:
             ButtonsView(model: model)
+        case .sensor:
+            SensorView(model: model)
         case .settings:
-            SettingsView(preferences: preferences)
+            SettingsView(model: model, preferences: preferences, launchAtLogin: launchAtLogin)
         }
     }
 
     @ViewBuilder private var errorLine: some View {
-        if let errorText = model.errorText {
+        if let errorText = model.errorText ?? launchAtLogin.errorText {
             Divider()
             Label(errorText, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)

@@ -38,12 +38,9 @@ public final class MouseModel {
     /// Why the last captured key was refused.
     public internal(set) var captureMessage: String?
 
-    /// Text typed into a DPI field and not yet written. There is only one: an edit in another
+    /// Text typed into a numeric field and not yet written. There is only one: an edit in another
     /// field commits this one first, so no typed text is replaced unseen.
-    ///
-    /// `isSent` marks a draft whose write is in flight: the field keeps showing it until the
-    /// mouse answers, so it does not flash the old value, and it is never written twice.
-    private var stageDraft: (index: Int, text: String, isSent: Bool)?
+    private var draft: FieldDraft?
 
     @ObservationIgnored private let sink: any CommandSink
 
@@ -58,14 +55,14 @@ public final class MouseModel {
         case .notConnected:
             snapshot = nil
             isPending = false
-            stageDraft = nil
+            draft = nil
             cancelCapture()
             confirmation = nil
         case .snapshot(let snapshot):
             refreshCount += 1
             self.snapshot = snapshot
             isPending = false
-            stageDraft = nil
+            draft = nil
         case .battery(let percent, let charging):
             snapshot?.percent = percent
             snapshot?.charging = charging
@@ -73,11 +70,11 @@ public final class MouseModel {
             refreshCount += 1
             errorText = message
             isPending = false
-            stageDraft = nil
+            draft = nil
         }
     }
 
-    /// Sends `command`, unless a write is in flight. A write clears the error and any typed DPI,
+    /// Sends `command`, unless a write is in flight. A write clears the error and any typed text,
     /// and stays pending until its result arrives.
     public func send(_ command: Command) {
         guard !isPending else {
@@ -87,7 +84,7 @@ public final class MouseModel {
         if command.isWrite {
             errorText = nil
             isPending = true
-            stageDraft = nil
+            draft = nil
             cancelCapture()
             confirmation = nil
         }
@@ -101,22 +98,27 @@ public final class MouseModel {
         sink.send(command: .setBackgroundPolling(enabled: enabled))
     }
 
-    /// The text of the stage's DPI field: what is being typed there, else the mouse's value.
-    public func stageText(index: Int) -> String {
-        if let stageDraft,
-           stageDraft.index == index {
-            return stageDraft.text
+    /// The text of `field`: what is being typed there, else the mouse's value.
+    public func fieldText(_ field: FieldDraft.Field) -> String {
+        if let draft,
+           draft.field == field {
+            return draft.text
         }
 
-        guard let snapshot,
-              snapshot.stages.indices.contains(index) else {
-            return ""
-        }
+        switch field {
+        case .stage(let index):
+            guard let snapshot,
+                  snapshot.stages.indices.contains(index) else {
+                return ""
+            }
 
-        return String(snapshot.stages[index].x)
+            return String(snapshot.stages[index].x)
+        case .angle:
+            return snapshot?.angle?.degrees.map { String($0) } ?? ""
+        }
     }
 
-    /// Records text typed into the stage's DPI field.
+    /// Records text typed into `field`.
     ///
     /// Ignored while a write is in flight, so a late call from the field cannot bring back text
     /// that was dropped. Text the field already shows is not an edit: a field reports it when it
@@ -124,72 +126,56 @@ public final class MouseModel {
     ///
     /// A real edit in another field commits the live draft first. If that starts a write, this
     /// edit is dropped like any other edit while a write is in flight.
-    public func editStage(index: Int, text: String) {
+    public func editField(_ field: FieldDraft.Field, text: String) {
         guard !isPending,
-              text != stageText(index: index) else {
+              text != fieldText(field) else {
             return
         }
 
-        if let stageDraft,
-           stageDraft.index != index {
-            commitStage(index: stageDraft.index)
+        if let draft,
+           draft.field != field {
+            commitField(draft.field)
         }
 
         guard !isPending else {
             return
         }
 
-        stageDraft = (index, text, false)
+        draft = FieldDraft(field: field, text: text, isSent: false)
     }
 
     /// Drops the typed text, so the field shows the mouse's value again. A draft whose write is
     /// in flight stays until the mouse answers.
-    public func discardStageEdit() {
-        guard stageDraft?.isSent != true else {
+    public func discardFieldEdit() {
+        guard draft?.isSent != true else {
             return
         }
 
-        stageDraft = nil
+        draft = nil
     }
 
-    /// Writes the text typed for the stage at `index`, snapped to the sensor's grid. The text stays
-    /// shown until the mouse answers a write; without a write it is dropped.
+    /// Writes the text typed for `field`. The text stays shown until the mouse answers a write;
+    /// without a write it is dropped.
     ///
-    /// Sends nothing when nothing was typed for this stage, when the text is the shown value, is
-    /// not a number or snaps to the shown value, or when the stage has different X and Y values,
-    /// which this app shows read-only.
-    public func commitStage(index: Int) {
-        guard let stageDraft,
-              stageDraft.index == index,
-              !stageDraft.isSent else {
+    /// Sends nothing when nothing was typed for this field, or when the text does not make a
+    /// write: see ``angleCommand(text:)`` and ``stageCommand(index:text:)``.
+    public func commitField(_ field: FieldDraft.Field) {
+        guard let draft,
+              draft.field == field,
+              !draft.isSent else {
             return
         }
 
-        discardStageEdit()
+        discardFieldEdit()
 
-        guard let snapshot,
-              snapshot.stages.indices.contains(index) else {
+        guard let command = command(for: draft) else {
             return
         }
 
-        let stage = snapshot.stages[index]
-
-        guard stage.x == stage.y,
-              stageDraft.text != String(stage.x),
-              let typed = UInt32(stageDraft.text) else {
-            return
-        }
-
-        let dpi = nearestValidDpi(snapshot: snapshot, value: typed)
-
-        guard dpi != stage.x else {
-            return
-        }
-
-        send(.setStageDpi(index: UInt8(index), x: dpi, y: dpi))
+        send(command)
 
         if isPending {
-            self.stageDraft = (index, stageDraft.text, true)
+            self.draft = FieldDraft(field: field, text: draft.text, isSent: true)
         }
     }
 
@@ -229,6 +215,41 @@ public final class MouseModel {
         send(.setStageCount(count: UInt8(count)))
     }
 
+    private func command(for draft: FieldDraft) -> Command? {
+        switch draft.field {
+        case .stage(let index):
+            stageCommand(index: index, text: draft.text)
+        case .angle:
+            angleCommand(text: draft.text)
+        }
+    }
+
+    /// The write for text typed for the stage at `index`, snapped to the sensor's grid, or `nil`
+    /// when the text is the shown value, is not a number or snaps to the shown value, or when the
+    /// stage has different X and Y values, which this app shows read-only.
+    private func stageCommand(index: Int, text: String) -> Command? {
+        guard let snapshot,
+              snapshot.stages.indices.contains(index) else {
+            return nil
+        }
+
+        let stage = snapshot.stages[index]
+
+        guard stage.x == stage.y,
+              text != String(stage.x),
+              let typed = UInt32(text) else {
+            return nil
+        }
+
+        let dpi = nearestValidDpi(snapshot: snapshot, value: typed)
+
+        guard dpi != stage.x else {
+            return nil
+        }
+
+        return .setStageDpi(index: UInt8(index), x: dpi, y: dpi)
+    }
+
 }
 
 private extension Command {
@@ -236,7 +257,9 @@ private extension Command {
     /// Whether the mouse answers this command with an event that ends the pending state.
     var isWrite: Bool {
         switch self {
-        case .setPolling, .setCurrentStage, .setStageCount, .setStageDpi, .setButton, .setShortcut:
+        case .setPolling, .setCurrentStage, .setStageCount, .setStageDpi, .setButton, .setShortcut,
+             .setLiftOff, .setDebounce, .setMotionSync, .setLinearCorrection, .setRippleControl,
+             .setSleep, .setAngle, .setAngleEnabled, .setFarDistance:
             return true
         case .setBackgroundPolling, .refresh:
             return false

@@ -17,6 +17,12 @@ pub enum Command {
     GetCurrentConfig = 0x0e,
     /// Identity: CID, MID and unique id bytes.
     GetMouseCidMid = 0x10,
+    /// Firmware version.
+    GetMouseVersion = 0x12,
+    /// Turn far distance mode on or off.
+    SetFarDistanceMode = 0x16,
+    /// Whether far distance mode is on.
+    GetFarDistanceMode = 0x17,
 }
 
 impl Command {
@@ -31,6 +37,9 @@ impl Command {
             0x0a => Some(Self::ReportMouseStatus),
             0x0e => Some(Self::GetCurrentConfig),
             0x10 => Some(Self::GetMouseCidMid),
+            0x12 => Some(Self::GetMouseVersion),
+            0x16 => Some(Self::SetFarDistanceMode),
+            0x17 => Some(Self::GetFarDistanceMode),
             _ => None,
         }
     }

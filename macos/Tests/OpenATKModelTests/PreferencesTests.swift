@@ -59,6 +59,29 @@ struct PreferencesTests {
         #expect(preferences.showsDockIcon(windowOpen: false))
     }
 
+    @Test func closingTheMainWindowQuitsWithoutTheIcon() {
+        let preferences = Preferences(defaults: defaults)
+
+        preferences.menuBarIcon = false
+
+        #expect(preferences.quitsAfterLastWindowClosed(mainWindowClosed: true))
+    }
+
+    @Test func closingTheMainWindowKeepsRunningWithTheIcon() {
+        let preferences = Preferences(defaults: defaults)
+
+        #expect(!preferences.quitsAfterLastWindowClosed(mainWindowClosed: true))
+    }
+
+    /// With the icon off the status window closes at launch, before the main window has opened.
+    @Test func statusWindowClosingDoesNotQuit() {
+        let preferences = Preferences(defaults: defaults)
+
+        preferences.menuBarIcon = false
+
+        #expect(!preferences.quitsAfterLastWindowClosed(mainWindowClosed: false))
+    }
+
     @Test func pollingFollowsThePreference() {
         let sink = RecordingSink()
         let model = MouseModel(sink: sink)

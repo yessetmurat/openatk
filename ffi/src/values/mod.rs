@@ -1,6 +1,7 @@
 //! Plain values that cross the foreign boundary, and their conversions to and from `core`.
 
 mod action;
+mod angle_value;
 mod button_value;
 mod command;
 mod mouse_button;
@@ -10,6 +11,7 @@ mod snapshot_value;
 mod stage_value;
 
 pub use action::Action;
+pub use angle_value::AngleValue;
 pub use button_value::ButtonValue;
 pub use command::Command;
 pub use mouse_button::MouseButton;

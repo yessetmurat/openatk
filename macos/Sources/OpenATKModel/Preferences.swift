@@ -44,6 +44,13 @@ public final class Preferences {
         windowOpen || !menuBarIcon
     }
 
+    /// Whether the app quits when its last window has closed: only without the menu bar icon, and
+    /// only once the main window was the one to close. The unused status window also closes, at
+    /// launch, before the main window has opened.
+    public func quitsAfterLastWindowClosed(mainWindowClosed: Bool) -> Bool {
+        mainWindowClosed && !menuBarIcon
+    }
+
     /// Sets `model`'s background polling to ``menuBarIcon``, now and on every later change.
     public func applyBackgroundPolling(to model: MouseModel) {
         pollingModel = model

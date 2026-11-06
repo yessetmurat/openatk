@@ -25,6 +25,9 @@ const BLOCK_LEN: u8 = 10;
 const SHORTCUT_LINE_LEN: u8 = 10;
 const STAGE_ADDRESSES: [u16; 4] = [0x0c, 0x14, 0x1c, 0x24];
 const STAGE_LEN: u8 = 8;
+const LIFT_OFF_LEN: u8 = 2;
+const SLEEP_BLOCK_LEN: u8 = 6;
+const ANGLE_BLOCK_LEN: u8 = 4;
 
 type Tool = Mouse<HidLink, ()>;
 
@@ -75,12 +78,20 @@ fn connect() -> Result<Tool, String> {
 }
 
 fn dump_ranges() -> Vec<(u16, u8)> {
-    let mut ranges = vec![(address::GENERAL_BLOCK, BLOCK_LEN)];
+    let mut ranges = vec![
+        (address::GENERAL_BLOCK, BLOCK_LEN),
+        (address::LIFT_OFF, LIFT_OFF_LEN),
+    ];
 
     ranges.extend(STAGE_ADDRESSES.iter().map(|&start| (start, STAGE_LEN)));
     ranges.extend(
         (0..BUTTON_SLOTS).map(|slot| (address::BUTTONS + slot * u16::from(BUTTON_LEN), BUTTON_LEN)),
     );
+    ranges.extend([
+        (address::SENSOR_BLOCK, BLOCK_LEN),
+        (address::SLEEP_BLOCK, SLEEP_BLOCK_LEN),
+        (address::ANGLE_BLOCK, ANGLE_BLOCK_LEN),
+    ]);
     for slot in 0..SHORTCUT_SLOTS {
         let start = address::SHORTCUTS + slot * SHORTCUT_STRIDE;
 

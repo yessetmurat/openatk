@@ -4,14 +4,19 @@ use std::sync::mpsc::{self, Sender};
 use std::time::Duration;
 
 use super::*;
-use crate::device::{Input, Timing};
+use crate::device::{AngleValue, Input, Timing};
 use crate::protocol::{REPORT_LEN, ReplyStatus, check};
-use crate::settings::{DpiAction, MouseAction, Sensor, ShortcutKey};
+use crate::settings::{DpiAction, FirmwareVersion, MouseAction, Sensor, ShortcutKey};
 
 const FAST: Timing = Timing {
     reply_timeout: Duration::from_millis(20),
     retries: 0,
 };
+
+const LIFT_OFF_BYTES: [u8; 2] = [0x01, 0x54];
+const SENSOR_BYTES: [u8; 10] = [0x00, 0x55, 0x00, 0x55, 0x01, 0x54, 0x00, 0x55, 0x00, 0x55];
+const SLEEP_BYTES: [u8; 6] = [0x00, 0x55, 0x06, 0x4f, 0x00, 0x55];
+const ANGLE_BYTES: [u8; 4] = [0x00, 0x55, 0x00, 0x55];
 
 struct Fake {
     eeprom: [u8; 0x200],
@@ -28,6 +33,10 @@ struct Fake {
     drop_address: Option<u16>,
     reject_writes: bool,
     zero_length: bool,
+    firmware: Option<[u8; 2]>,
+    far_distance: Option<u8>,
+    unavailable_status: u8,
+    reject_read_at: Option<u16>,
 }
 
 impl Fake {
@@ -52,6 +61,18 @@ impl Fake {
         self.eeprom[start..start + bytes.len()].copy_from_slice(bytes);
     }
 
+    fn at(&self, address: u16, len: usize) -> &[u8] {
+        &self.eeprom[usize::from(address)..usize::from(address) + len]
+    }
+
+    fn read_addresses(&self) -> Vec<u16> {
+        self.log
+            .iter()
+            .filter(|report| report[1] == Command::GetEeprom.code())
+            .map(|report| u16::from_be_bytes([report[3], report[4]]))
+            .collect()
+    }
+
     fn answer(&mut self, request: &Frame) -> Option<(u8, Vec<u8>)> {
         let address = usize::from(request.address());
         let len = usize::from(request.to_report()[5]);
@@ -61,7 +82,25 @@ impl Fake {
             0x04 => Some((0, self.battery.to_vec())),
             0x0e => Some((0, vec![self.profile])),
             0x10 => Some((0, vec![self.cid, self.mid, 0x21])),
+            0x12 => Some(match self.firmware {
+                Some(version) => (0, version.to_vec()),
+                None => (self.unavailable_status, Vec::new()),
+            }),
+            0x16 => {
+                let mode = request.payload()[0];
+
+                if !self.drop_writes {
+                    self.far_distance = Some(mode);
+                }
+
+                Some((0, vec![mode]))
+            }
+            0x17 => Some(match self.far_distance {
+                Some(mode) => (0, vec![mode]),
+                None => (self.unavailable_status, Vec::new()),
+            }),
             0x08 if self.silent_reads => None,
+            0x08 if self.reject_read_at == Some(request.address()) => Some((1, Vec::new())),
             0x08 => Some((0, self.eeprom[address..address + len].to_vec())),
             0x07 if self.mute_writes => None,
             0x07 if self.reject_writes => Some((1, Vec::new())),
@@ -136,6 +175,10 @@ fn new_fake() -> Fake {
         drop_address: None,
         reject_writes: false,
         zero_length: false,
+        firmware: Some([0x03, 0x01]),
+        far_distance: Some(0),
+        unavailable_status: 255,
+        reject_read_at: None,
     };
 
     // Polling 1000 Hz, 3 stages, current stage 1, then unknown bytes 6-9.
@@ -166,6 +209,12 @@ fn new_fake() -> Fake {
     for (button, action) in model().buttons.iter().zip(actions) {
         fake.put(button.address(), &action.encode().expect("editable"));
     }
+
+    // The bytes read from the real mouse.
+    fake.put(address::LIFT_OFF, &LIFT_OFF_BYTES);
+    fake.put(address::SENSOR_BLOCK, &SENSOR_BYTES);
+    fake.put(address::SLEEP_BLOCK, &SLEEP_BYTES);
+    fake.put(address::ANGLE_BLOCK, &ANGLE_BYTES);
 
     fake
 }
@@ -833,4 +882,462 @@ fn shortcuts_are_read_only_for_shortcut_buttons() {
         .iter()
         .any(|report| report[1] == 0x08 && report[3] >= 0x01);
     assert!(!reads_shortcuts);
+}
+
+#[test]
+fn snapshot_reads_the_sensor_settings_of_the_real_mouse() {
+    let (mut mouse, _) = rig(DevicePath::Cable);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(
+        snapshot.firmware,
+        Some(FirmwareVersion { major: 3, minor: 1 })
+    );
+    assert_eq!(snapshot.lift_off_tenths, Some(7));
+    assert_eq!(snapshot.debounce_ms, Some(0));
+    assert_eq!(snapshot.motion_sync, Some(false));
+    assert_eq!(snapshot.linear_correction, Some(false));
+    assert_eq!(snapshot.ripple_control, Some(false));
+    assert_eq!(snapshot.sleep_seconds, Some(10));
+    assert_eq!(
+        snapshot.angle,
+        Some(AngleValue {
+            degrees: Some(0),
+            enabled: Some(false),
+        })
+    );
+    assert_eq!(snapshot.far_distance, Some(false));
+}
+
+#[test]
+fn snapshot_carries_the_lists_and_ranges_of_the_model() {
+    let (mut mouse, _) = rig(DevicePath::Cable);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.debounce_options_ms, model().debounce_ms);
+    assert_eq!(snapshot.sleep_options_seconds, model().sleep_seconds);
+    assert_eq!(snapshot.lift_off_range(), 7..=17);
+    assert_eq!(snapshot.angle_range(), -30..=30);
+}
+
+#[test]
+fn snapshot_tolerates_a_rejected_block() {
+    for address in [
+        address::LIFT_OFF,
+        address::SENSOR_BLOCK,
+        address::ANGLE_BLOCK,
+    ] {
+        let (mut mouse, fake) = rig(DevicePath::Cable);
+        fake.borrow_mut().reject_read_at = Some(address);
+
+        let snapshot = mouse.snapshot().expect("snapshot");
+
+        assert_eq!(
+            snapshot.lift_off_tenths.is_none(),
+            address == address::LIFT_OFF
+        );
+        assert_eq!(
+            snapshot.debounce_ms.is_none(),
+            address == address::SENSOR_BLOCK
+        );
+        assert_eq!(
+            snapshot.sleep_seconds.is_none(),
+            address == address::SENSOR_BLOCK
+        );
+        assert_eq!(snapshot.angle.is_none(), address == address::ANGLE_BLOCK);
+    }
+}
+
+#[test]
+fn one_bad_pair_reads_as_unknown_and_keeps_the_snapshot() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut()
+        .put(address::SENSOR_BLOCK + 2, &[0x00, 0x99]);
+    fake.borrow_mut()
+        .put(address::ANGLE_BLOCK + 2, &[0x00, 0x99]);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.motion_sync, None);
+    assert_eq!(snapshot.debounce_ms, Some(0));
+    assert_eq!(
+        snapshot.angle,
+        Some(AngleValue {
+            degrees: Some(0),
+            enabled: None,
+        })
+    );
+}
+
+#[test]
+fn setter_refuses_its_own_bad_pair_with_no_write() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut()
+        .put(address::SENSOR_BLOCK + 2, &[0x00, 0x99]);
+
+    let result = mouse.set_motion_sync(true);
+
+    assert!(matches!(
+        result,
+        Err(MouseError::Protocol(ProtocolError::BadCheck { .. }))
+    ));
+    assert!(fake.borrow().writes().is_empty());
+}
+
+#[test]
+fn bad_neighbour_does_not_block_a_write_and_stays_as_it_is() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut()
+        .put(address::SENSOR_BLOCK + 2, &[0x00, 0x99]);
+
+    mouse.set_debounce(4).expect("own pair is readable");
+
+    let fake = fake.borrow();
+    assert_eq!(
+        fake.at(address::SENSOR_BLOCK, 10),
+        [0x04, 0x51, 0x00, 0x99, 0x01, 0x54, 0x00, 0x55, 0x00, 0x55]
+    );
+}
+
+#[test]
+fn set_lift_off_writes_the_byte_and_reads_it_back() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_lift_off(17).expect("set");
+
+    let fake = fake.borrow();
+    assert_eq!(fake.codes(), [0x08, 0x07, 0x08]);
+    assert_eq!(fake.writes(), [(address::LIFT_OFF, vec![0x0b, 0x4a])]);
+}
+
+#[test]
+fn set_lift_off_rejects_a_height_outside_the_range() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    assert!(mouse.set_lift_off(6).is_err());
+    assert!(mouse.set_lift_off(18).is_err());
+
+    assert!(fake.borrow().writes().is_empty());
+}
+
+#[test]
+fn set_debounce_rejects_values_outside_the_list() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    let result = mouse.set_debounce(3);
+
+    assert_eq!(
+        result,
+        Err(ProtocolError::InvalidValue("debounce time").into())
+    );
+    assert!(fake.borrow().log.is_empty());
+}
+
+#[test]
+fn toggles_change_only_their_pair() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_linear_correction(true).expect("set");
+    mouse.set_ripple_control(true).expect("set");
+
+    assert_eq!(
+        fake.borrow().at(address::SENSOR_BLOCK, 10),
+        [0x00, 0x55, 0x00, 0x55, 0x01, 0x54, 0x01, 0x54, 0x01, 0x54]
+    );
+}
+
+#[test]
+fn off_list_led_byte_survives_a_motion_sync_write() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_motion_sync(true).expect("set");
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+    assert_eq!(snapshot.sleep_seconds, Some(10));
+    assert_eq!(snapshot.motion_sync, Some(true));
+    assert_eq!(
+        fake.borrow().at(address::SENSOR_BLOCK, 10),
+        [0x00, 0x55, 0x01, 0x54, 0x01, 0x54, 0x00, 0x55, 0x00, 0x55]
+    );
+}
+
+#[test]
+fn sensor_block_write_is_verified() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().drop_address = Some(address::SENSOR_BLOCK);
+
+    let result = mouse.set_motion_sync(true);
+
+    assert!(matches!(
+        result,
+        Err(MouseError::ReadBackMismatch { address: 0xa9, .. })
+    ));
+}
+
+#[test]
+fn sleep_writes_both_blocks_and_sets_enabled() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_sleep(1800).expect("set");
+
+    let fake = fake.borrow();
+    assert_eq!(
+        fake.writes(),
+        [
+            (
+                address::SENSOR_BLOCK,
+                vec![0x00, 0x55, 0x00, 0x55, 180, 0xa1, 0x00, 0x55, 0x00, 0x55]
+            ),
+            (
+                address::SLEEP_BLOCK,
+                vec![0x01, 0x54, 180, 0xa1, 0x00, 0x55]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn sleep_keeps_sensor_model() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut()
+        .put(address::SLEEP_BLOCK + 4, &[0x07, 0x99]);
+
+    mouse.set_sleep(60).expect("set");
+
+    assert_eq!(
+        fake.borrow().at(address::SLEEP_BLOCK, 6),
+        [0x01, 0x54, 6, 0x4f, 0x07, 0x99]
+    );
+}
+
+#[test]
+fn sleep_refused_by_either_block_writes_nothing() {
+    for bad_pair in [address::SENSOR_BLOCK + 4, address::SLEEP_BLOCK + 2] {
+        let (mut mouse, fake) = rig(DevicePath::Cable);
+        fake.borrow_mut().put(bad_pair, &[0x06, 0x99]);
+
+        let result = mouse.set_sleep(60);
+
+        assert!(result.is_err());
+        assert!(fake.borrow().writes().is_empty());
+    }
+}
+
+#[test]
+fn partial_sleep_write_is_reported_and_a_second_set_heals_it() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().drop_address = Some(address::SLEEP_BLOCK);
+
+    let result = mouse.set_sleep(60);
+
+    assert_eq!(
+        result,
+        Err(MouseError::ReadBackMismatch {
+            address: address::SLEEP_BLOCK,
+            written: vec![0x01, 0x54, 6, 0x4f, 0x00, 0x55],
+            actual: SLEEP_BYTES.to_vec(),
+        })
+    );
+
+    // Only the LED off half landed, and the snapshot shows only that half.
+    let snapshot = mouse.snapshot().expect("snapshot");
+    assert_eq!(snapshot.sleep_seconds, Some(60));
+    assert_eq!(fake.borrow().at(address::SLEEP_BLOCK, 6), SLEEP_BYTES);
+
+    fake.borrow_mut().drop_address = None;
+    fake.borrow_mut().log.clear();
+
+    mouse.set_sleep(60).expect("the same value again");
+
+    let fake = fake.borrow();
+    let written: Vec<u16> = fake.writes().iter().map(|(address, _)| *address).collect();
+    assert_eq!(written, [address::SENSOR_BLOCK, address::SLEEP_BLOCK]);
+    assert_eq!(
+        fake.at(address::SLEEP_BLOCK, 6),
+        [0x01, 0x54, 6, 0x4f, 0x00, 0x55]
+    );
+}
+
+#[test]
+fn set_sleep_rejects_values_outside_the_list() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    let result = mouse.set_sleep(10);
+
+    assert_eq!(
+        result,
+        Err(ProtocolError::InvalidValue("sleep time").into())
+    );
+    assert!(fake.borrow().log.is_empty());
+}
+
+#[test]
+fn below_minimum_firmware_has_no_angle() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().firmware = Some([0x02, 0x99]);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.angle, None);
+    assert!(
+        !fake
+            .borrow()
+            .read_addresses()
+            .contains(&address::ANGLE_BLOCK)
+    );
+}
+
+#[test]
+fn not_supported_firmware_is_absent_and_has_no_angle() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().firmware = None;
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.firmware, None);
+    assert_eq!(snapshot.angle, None);
+}
+
+#[test]
+fn any_rejection_of_firmware_or_far_distance_leaves_the_field_absent() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().firmware = None;
+    fake.borrow_mut().far_distance = None;
+    fake.borrow_mut().unavailable_status = 1;
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.firmware, None);
+    assert_eq!(snapshot.far_distance, None);
+    assert_eq!(snapshot.angle, None);
+}
+
+#[test]
+fn set_angle_keeps_the_switch() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut()
+        .put(address::ANGLE_BLOCK + 2, &[0x01, 0x99]);
+
+    mouse.set_angle(-30).expect("set");
+
+    let fake = fake.borrow();
+    assert_eq!(fake.codes(), [0x12, 0x08, 0x07, 0x08]);
+    assert_eq!(fake.at(address::ANGLE_BLOCK, 4), [0xe2, 0x73, 0x01, 0x99]);
+}
+
+#[test]
+fn set_angle_enabled_keeps_the_angle() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().put(address::ANGLE_BLOCK, &[0xe2, 0x99]);
+
+    mouse.set_angle_enabled(true).expect("set");
+
+    assert_eq!(
+        fake.borrow().at(address::ANGLE_BLOCK, 4),
+        [0xe2, 0x99, 0x01, 0x54]
+    );
+}
+
+#[test]
+fn set_angle_rejects_values_outside_the_range_with_no_write() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    assert!(mouse.set_angle(31).is_err());
+    assert!(mouse.set_angle(-31).is_err());
+
+    assert!(fake.borrow().writes().is_empty());
+}
+
+#[test]
+fn set_angle_refused_below_minimum_firmware() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().firmware = Some([0x02, 0x99]);
+
+    let angle = mouse.set_angle(5);
+    let enabled = mouse.set_angle_enabled(true);
+
+    let refused = Err(ProtocolError::InvalidValue("angle on this firmware").into());
+    assert_eq!(angle, refused);
+    assert_eq!(enabled, refused);
+    assert_eq!(fake.borrow().codes(), [0x12, 0x12]);
+}
+
+#[test]
+fn set_angle_refused_when_the_firmware_is_not_supported() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().firmware = None;
+
+    let result = mouse.set_angle(5);
+
+    assert!(result.is_err());
+    assert_eq!(fake.borrow().codes(), [0x12]);
+}
+
+#[test]
+fn far_distance_reads_back_through_get() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    mouse.set_far_distance(true).expect("set");
+
+    let fake = fake.borrow();
+    assert_eq!(fake.codes(), [0x17, 0x16, 0x17]);
+    assert_eq!(fake.log[1][5..8], [10, 1, 0]);
+    assert_eq!(fake.far_distance, Some(1));
+}
+
+#[test]
+fn far_distance_mismatch_is_reported() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().drop_writes = true;
+
+    let result = mouse.set_far_distance(true);
+
+    let error = result.expect_err("the mode did not change");
+    assert_eq!(
+        error,
+        MouseError::FarDistanceMismatch {
+            written: 1,
+            actual: 0,
+        }
+    );
+    assert!(!error.to_string().contains("EEPROM"));
+    assert!(!error.to_string().contains("0x0000"));
+}
+
+#[test]
+fn not_supported_far_distance_is_absent() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().far_distance = None;
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+    let result = mouse.set_far_distance(true);
+
+    assert_eq!(snapshot.far_distance, None);
+    assert_eq!(result, Err(MouseError::Rejected(ReplyStatus::NotSupported)));
+    assert!(!fake.borrow().codes().contains(&0x16));
+}
+
+#[test]
+fn unknown_far_distance_mode_is_shown_as_unknown_and_not_rewritten() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+    fake.borrow_mut().far_distance = Some(5);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+    let result = mouse.set_far_distance(true);
+
+    assert_eq!(snapshot.far_distance, None);
+    assert!(result.is_err());
+    assert!(!fake.borrow().codes().contains(&0x16));
+}
+
+#[test]
+fn unwritable_neighbour_0xb3_is_refused() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    let result = mouse.write_eeprom(0xb3, &[0x00, 0x55]);
+
+    assert_eq!(result, Err(ProtocolError::AddressNotWritable(0xb3).into()));
+    assert!(fake.borrow().log.is_empty());
 }

@@ -1,7 +1,7 @@
 //! The table of supported mouse models.
 
 use crate::device::DevicePath;
-use crate::settings::{Button, PollingRate, Sensor};
+use crate::settings::{Button, FirmwareVersion, PollingRate, Sensor};
 
 const CABLE_RATES: &[PollingRate] = &[
     PollingRate::Hz125,
@@ -25,6 +25,8 @@ const BUTTONS: &[Button] = &[
     Button::Side1,
     Button::Side2,
 ];
+const DEBOUNCE_MS: &[u8] = &[0, 1, 2, 4, 8, 15, 20];
+const SLEEP_SECONDS: &[u16] = &[30, 60, 120, 180, 300, 1200, 1500, 1800];
 
 static MODELS: [Model; 1] = [Model {
     name: "ATK F1 EXTREME",
@@ -34,6 +36,9 @@ static MODELS: [Model; 1] = [Model {
     cable_polling_rates: CABLE_RATES,
     dongle_polling_rates: DONGLE_RATES,
     buttons: BUTTONS,
+    angle_min_firmware: Some(FirmwareVersion { major: 3, minor: 0 }),
+    debounce_ms: DEBOUNCE_MS,
+    sleep_seconds: SLEEP_SECONDS,
 }];
 
 /// A supported mouse model.
@@ -53,6 +58,12 @@ pub struct Model {
     pub dongle_polling_rates: &'static [PollingRate],
     /// Programmable buttons.
     pub buttons: &'static [Button],
+    /// Lowest firmware with the sensor angle. `None`: the model has no angle at all.
+    pub angle_min_firmware: Option<FirmwareVersion>,
+    /// Debounce times offered, in milliseconds.
+    pub debounce_ms: &'static [u8],
+    /// Sleep times offered, in seconds.
+    pub sleep_seconds: &'static [u16],
 }
 
 impl Model {
@@ -63,6 +74,15 @@ impl Model {
             DevicePath::Cable => self.cable_polling_rates,
             DevicePath::Dongle => self.dongle_polling_rates,
         }
+    }
+
+    /// Returns whether the sensor angle may be used on `firmware`. An unknown firmware
+    /// has no angle.
+    #[must_use]
+    pub fn supports_angle(&self, firmware: Option<FirmwareVersion>) -> bool {
+        self.angle_min_firmware
+            .zip(firmware)
+            .is_some_and(|(minimum, version)| version >= minimum)
     }
 
     /// Returns the model with this identity, or `None` when it is not supported.

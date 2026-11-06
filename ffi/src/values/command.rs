@@ -49,6 +49,51 @@ pub enum Command {
         /// The keys, in press order.
         keys: Vec<ShortcutKeyValue>,
     },
+    /// Set the lift-off height.
+    SetLiftOff {
+        /// Height in tenths of a millimetre.
+        tenths: u8,
+    },
+    /// Set the debounce time.
+    SetDebounce {
+        /// Time in milliseconds; must be one the snapshot offers.
+        ms: u8,
+    },
+    /// Turn motion sync on or off.
+    SetMotionSync {
+        /// Whether motion sync is on.
+        enabled: bool,
+    },
+    /// Turn linear correction on or off.
+    SetLinearCorrection {
+        /// Whether linear correction is on.
+        enabled: bool,
+    },
+    /// Turn ripple control on or off.
+    SetRippleControl {
+        /// Whether ripple control is on.
+        enabled: bool,
+    },
+    /// Set the sleep time.
+    SetSleep {
+        /// Time in seconds; must be one the snapshot offers.
+        seconds: u16,
+    },
+    /// Set the sensor angle.
+    SetAngle {
+        /// Angle in degrees.
+        degrees: i8,
+    },
+    /// Turn the sensor angle on or off.
+    SetAngleEnabled {
+        /// Whether the angle is applied.
+        enabled: bool,
+    },
+    /// Turn far distance mode on or off.
+    SetFarDistance {
+        /// Whether far distance mode is on.
+        enabled: bool,
+    },
     /// Turn background polling of link and battery on or off.
     SetBackgroundPolling {
         /// Whether polling runs.
@@ -112,6 +157,15 @@ impl Command {
 
                 MouseCommand::SetShortcut(button.into(), shortcut)
             }
+            Self::SetLiftOff { tenths } => MouseCommand::SetLiftOff(tenths),
+            Self::SetDebounce { ms } => MouseCommand::SetDebounce(ms),
+            Self::SetMotionSync { enabled } => MouseCommand::SetMotionSync(enabled),
+            Self::SetLinearCorrection { enabled } => MouseCommand::SetLinearCorrection(enabled),
+            Self::SetRippleControl { enabled } => MouseCommand::SetRippleControl(enabled),
+            Self::SetSleep { seconds } => MouseCommand::SetSleep(seconds),
+            Self::SetAngle { degrees } => MouseCommand::SetAngle(degrees),
+            Self::SetAngleEnabled { enabled } => MouseCommand::SetAngleEnabled(enabled),
+            Self::SetFarDistance { enabled } => MouseCommand::SetFarDistance(enabled),
             Self::SetBackgroundPolling { enabled } => MouseCommand::SetBackgroundPolling(enabled),
             Self::Refresh => MouseCommand::Refresh,
         })

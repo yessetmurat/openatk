@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "openatk",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     targets: [
         .binaryTarget(
             name: "OpenATKFFI",

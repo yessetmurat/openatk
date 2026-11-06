@@ -118,3 +118,12 @@ fn payload_ignores_valid_length() {
     assert_eq!(frame.payload()[0], 0x40);
     assert_eq!(frame.payload()[1], 0x02);
 }
+
+#[test]
+fn far_distance_frame_holds_the_mode_with_no_check_byte() {
+    let on = Frame::set_far_distance(true).to_report();
+    let off = Frame::set_far_distance(false).to_report();
+
+    assert_eq!(on[1..8], [0x16, 0, 0, 0, 10, 1, 0]);
+    assert_eq!(off[1..8], [0x16, 0, 0, 0, 10, 0, 0]);
+}

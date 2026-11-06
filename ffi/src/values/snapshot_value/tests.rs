@@ -1,6 +1,7 @@
-use openatk_core::device::{Battery, MouseSnapshot};
+use openatk_core::device::{self, Battery, MouseSnapshot};
 use openatk_core::settings::{
-    Button, ButtonAction, DpiStage, MouseAction, PollingRate, Sensor, Shortcut, ShortcutKey,
+    Button, ButtonAction, DpiStage, FirmwareVersion, MouseAction, PollingRate, Sensor, Shortcut,
+    ShortcutKey,
 };
 
 use super::*;
@@ -36,6 +37,23 @@ fn sample_snapshot() -> MouseSnapshot {
             ),
         ],
         shortcuts: vec![(Button::Side1, shortcut)],
+        firmware: Some(FirmwareVersion {
+            major: 3,
+            minor: 0x10,
+        }),
+        lift_off_tenths: Some(12),
+        debounce_ms: Some(4),
+        debounce_options_ms: vec![0, 4, 20],
+        motion_sync: Some(true),
+        linear_correction: Some(false),
+        ripple_control: Some(true),
+        sleep_seconds: Some(60),
+        sleep_options_seconds: vec![30, 60, 1800],
+        angle: Some(device::AngleValue {
+            degrees: Some(-30),
+            enabled: Some(true),
+        }),
+        far_distance: Some(false),
     }
 }
 
@@ -69,6 +87,92 @@ fn snapshot_converts_all_fields() {
         ])
     );
     assert_eq!(value.buttons[1].action, Action::Shortcut);
+}
+
+#[test]
+fn snapshot_converts_new_fields() {
+    let value = SnapshotValue::from(&sample_snapshot());
+
+    assert_eq!(value.firmware.as_deref(), Some("3.10"));
+    assert_eq!(value.lift_off_tenths, Some(12));
+    assert_eq!(
+        (value.lift_off_min_tenths, value.lift_off_max_tenths),
+        (7, 17)
+    );
+    assert_eq!(value.debounce_ms, Some(4));
+    assert_eq!(value.debounce_options_ms, vec![0, 4, 20]);
+    assert_eq!(value.motion_sync, Some(true));
+    assert_eq!(value.linear_correction, Some(false));
+    assert_eq!(value.ripple_control, Some(true));
+    assert_eq!(value.sleep_seconds, Some(60));
+    assert_eq!(value.sleep_options_seconds, vec![30, 60, 1800]);
+    assert_eq!(
+        value.angle,
+        Some(AngleValue {
+            degrees: Some(-30),
+            enabled: Some(true),
+        })
+    );
+    assert_eq!((value.angle_min, value.angle_max), (-30, 30));
+    assert_eq!(value.far_distance, Some(false));
+}
+
+#[test]
+fn off_list_values_pass_through() {
+    let mut snapshot = sample_snapshot();
+    snapshot.lift_off_tenths = Some(6);
+    snapshot.debounce_ms = Some(3);
+    snapshot.sleep_seconds = Some(10);
+
+    let value = SnapshotValue::from(&snapshot);
+
+    assert_eq!(value.lift_off_tenths, Some(6));
+    assert_eq!(value.debounce_ms, Some(3));
+    assert_eq!(value.sleep_seconds, Some(10));
+    assert!(!value.sleep_options_seconds.contains(&10));
+}
+
+#[test]
+fn absent_angle_stays_absent() {
+    let mut snapshot = sample_snapshot();
+    snapshot.angle = None;
+
+    let value = SnapshotValue::from(&snapshot);
+
+    assert_eq!(value.angle, None);
+}
+
+#[test]
+fn unknown_angle_fields_stay_unknown_inside_a_present_angle() {
+    let mut snapshot = sample_snapshot();
+    snapshot.angle = Some(device::AngleValue {
+        degrees: Some(5),
+        enabled: None,
+    });
+
+    let value = SnapshotValue::from(&snapshot);
+
+    assert_eq!(
+        value.angle,
+        Some(AngleValue {
+            degrees: Some(5),
+            enabled: None,
+        })
+    );
+}
+
+#[test]
+fn unknown_fields_stay_unknown() {
+    let mut snapshot = sample_snapshot();
+    snapshot.firmware = None;
+    snapshot.lift_off_tenths = None;
+    snapshot.far_distance = None;
+
+    let value = SnapshotValue::from(&snapshot);
+
+    assert_eq!(value.firmware, None);
+    assert_eq!(value.lift_off_tenths, None);
+    assert_eq!(value.far_distance, None);
 }
 
 #[test]

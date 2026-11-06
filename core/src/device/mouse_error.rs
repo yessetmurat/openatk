@@ -28,6 +28,13 @@ pub enum MouseError {
         /// Bytes read back.
         actual: Vec<u8>,
     },
+    /// The far distance mode read back differs from the mode written.
+    FarDistanceMismatch {
+        /// Mode that was written.
+        written: u8,
+        /// Mode read back.
+        actual: u8,
+    },
     /// The mouse model is not supported.
     UnsupportedModel {
         /// Customer id reported by the mouse.
@@ -47,6 +54,9 @@ impl fmt::Display for MouseError {
             Self::Protocol(error) => write!(f, "protocol error: {error}"),
             Self::ReadBackMismatch { address, .. } => {
                 write!(f, "read-back mismatch at EEPROM address {address:#06x}")
+            }
+            Self::FarDistanceMismatch { written, actual } => {
+                write!(f, "far distance mode is {actual} after writing {written}")
             }
             Self::UnsupportedModel { cid, mid } => {
                 write!(

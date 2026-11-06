@@ -5,6 +5,7 @@
 //  Created by Yesset Murat on 06.11.2026.
 //
 
+import Foundation
 import OpenATKBindings
 
 extension SnapshotValue {
@@ -27,7 +28,22 @@ extension SnapshotValue {
             sensor: .paw3950Ultra,
             currentStage: 1,
             stages: stages.map { StageValue(x: $0, y: $0) },
-            buttons: buttons
+            buttons: buttons,
+            firmware: "3.01",
+            liftOffTenths: 7,
+            liftOffMinTenths: 7,
+            liftOffMaxTenths: 17,
+            debounceMs: 0,
+            debounceOptionsMs: Data([0, 1, 2, 4, 8, 15, 20]),
+            motionSync: false,
+            linearCorrection: false,
+            rippleControl: false,
+            sleepSeconds: 10,
+            sleepOptionsSeconds: [30, 60, 120, 180, 300, 1200, 1500, 1800],
+            angle: AngleValue(degrees: 0, enabled: false),
+            angleMin: -30,
+            angleMax: 30,
+            farDistance: false
         )
     }
 

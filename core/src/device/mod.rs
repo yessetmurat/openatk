@@ -19,6 +19,6 @@ pub use link::Link;
 pub use model::Model;
 pub use mouse::Mouse;
 pub use mouse_error::MouseError;
-pub use mouse_snapshot::{Battery, MouseSnapshot};
+pub use mouse_snapshot::{AngleValue, Battery, MouseSnapshot};
 pub use service::{MouseCommand, MouseEvent, MouseService};
 pub use session::{Session, Timing};

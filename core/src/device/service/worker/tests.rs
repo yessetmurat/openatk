@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use super::*;
 use crate::device::{Battery, Model, MouseSnapshot};
-use crate::protocol::{Command, Frame, REPORT_LEN, ReplyStatus, check};
+use crate::protocol::{Command, Frame, REPORT_LEN, ReplyStatus, address, check};
 use crate::settings::{ButtonAction, DpiStage, MouseAction, PollingRate, Sensor};
 
 const FAST: Timing = Timing {
@@ -55,6 +55,7 @@ struct Device {
     sent_at: Vec<Instant>,
     opens: Vec<(DevicePath, usize)>,
     live_links: usize,
+    far_distance: u8,
 }
 
 impl Device {
@@ -76,6 +77,7 @@ impl Device {
             sent_at: Vec::new(),
             opens: Vec::new(),
             live_links: 0,
+            far_distance: 0,
         };
 
         // Polling 1000 Hz, one stage, current stage 0, then unknown bytes 6-9.
@@ -108,6 +110,15 @@ impl Device {
         for button in model.buttons {
             device.put(button.address(), &click);
         }
+
+        // The bytes read from the real mouse.
+        device.put(address::LIFT_OFF, &[0x01, 0x54]);
+        device.put(
+            address::SENSOR_BLOCK,
+            &[0x00, 0x55, 0x00, 0x55, 0x01, 0x54, 0x00, 0x55, 0x00, 0x55],
+        );
+        device.put(address::SLEEP_BLOCK, &[0x00, 0x55, 0x06, 0x4f, 0x00, 0x55]);
+        device.put(address::ANGLE_BLOCK, &[0x00, 0x55, 0x00, 0x55]);
 
         device
     }
@@ -155,6 +166,14 @@ impl Device {
             0x04 => Some((0, vec![BATTERY.percent, 0])),
             0x0e => Some((0, vec![0])),
             0x10 => Some((0, vec![self.cid, 50, 0x21])),
+            0x12 => Some((0, vec![0x03, 0x01])),
+            0x16 if self.reject_writes => Some((1, Vec::new())),
+            0x16 => {
+                self.far_distance = request.payload()[0];
+
+                Some((0, vec![self.far_distance]))
+            }
+            0x17 => Some((0, vec![self.far_distance])),
             0x08 => Some((0, self.eeprom[start..start + len].to_vec())),
             0x07 if self.reject_writes => Some((1, Vec::new())),
             0x07 => {
@@ -418,6 +437,64 @@ fn successful_write_sends_the_new_snapshot() {
     rig.command(MouseCommand::SetPolling(PollingRate::Hz500));
 
     assert_eq!(rig.next_snapshot().polling, PollingRate::Hz500);
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn sensor_commands_end_in_a_snapshot_that_shows_them() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    rig.next_snapshot();
+
+    rig.command(MouseCommand::SetLiftOff(12));
+    assert_eq!(rig.next_snapshot().lift_off_tenths, Some(12));
+    rig.command(MouseCommand::SetDebounce(4));
+    assert_eq!(rig.next_snapshot().debounce_ms, Some(4));
+    rig.command(MouseCommand::SetMotionSync(true));
+    assert_eq!(rig.next_snapshot().motion_sync, Some(true));
+    rig.command(MouseCommand::SetLinearCorrection(true));
+    assert_eq!(rig.next_snapshot().linear_correction, Some(true));
+    rig.command(MouseCommand::SetRippleControl(true));
+    assert_eq!(rig.next_snapshot().ripple_control, Some(true));
+    rig.command(MouseCommand::SetSleep(120));
+    assert_eq!(rig.next_snapshot().sleep_seconds, Some(120));
+    rig.command(MouseCommand::SetAngle(-5));
+    let angle = rig.next_snapshot().angle.expect("firmware 3.01");
+    assert_eq!(angle.degrees, Some(-5));
+    rig.command(MouseCommand::SetAngleEnabled(true));
+    let angle = rig.next_snapshot().angle.expect("firmware 3.01");
+    assert_eq!(angle.enabled, Some(true));
+    rig.command(MouseCommand::SetFarDistance(true));
+    assert_eq!(rig.next_snapshot().far_distance, Some(true));
+
+    assert_eq!(rig.finish(), []);
+}
+
+#[test]
+fn failed_sensor_write_sends_failure_then_real_snapshot() {
+    let rig = Rig::start(Device::on(DevicePath::Dongle));
+    rig.next_snapshot();
+    rig.device().reject_writes = true;
+
+    for command in [
+        MouseCommand::SetLiftOff(12),
+        MouseCommand::SetDebounce(4),
+        MouseCommand::SetMotionSync(true),
+        MouseCommand::SetLinearCorrection(true),
+        MouseCommand::SetRippleControl(true),
+        MouseCommand::SetSleep(120),
+        MouseCommand::SetAngle(-5),
+        MouseCommand::SetAngleEnabled(true),
+        MouseCommand::SetFarDistance(true),
+    ] {
+        rig.command(command);
+
+        assert_eq!(
+            rig.next_event(),
+            MouseEvent::CommandFailed(MouseError::Rejected(ReplyStatus::Fail))
+        );
+        assert_eq!(rig.next_snapshot().lift_off_tenths, Some(7));
+    }
+
     assert_eq!(rig.finish(), []);
 }
 

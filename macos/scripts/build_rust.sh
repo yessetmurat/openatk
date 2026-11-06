@@ -10,7 +10,7 @@ xcframework="$macos/Frameworks/OpenATKFFI.xcframework"
 
 cd "$root"
 # Match the package platform so the static library carries no newer minimum version.
-export MACOSX_DEPLOYMENT_TARGET=14.0
+export MACOSX_DEPLOYMENT_TARGET=15.0
 cargo build -p openatk-ffi --release
 library="$root/target/release/libopenatk_ffi.a"
 

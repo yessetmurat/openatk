@@ -26,7 +26,7 @@ struct PerformanceView: View {
             }
         }
         .onDisappear {
-            model.discardStageEdit()
+            model.discardFieldEdit()
         }
     }
 
@@ -66,6 +66,7 @@ struct PerformanceView: View {
             }
         }
         .pickerStyle(.menu)
+        // Safe only while no other row of this section has an `.id`: see `SensorView.rowID`.
         .id(model.refreshCount)
     }
 
@@ -96,7 +97,7 @@ struct PerformanceView: View {
 
         return LabeledContent {
             if stage.x == stage.y {
-                StageDpiField(model: model, index: index)
+                DraftField(model: model, field: .stage(index), title: Strings.stage(index: index))
             } else {
                 Text(Strings.splitDpi(x: stage.x, y: stage.y))
             }

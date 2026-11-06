@@ -19,6 +19,9 @@ public enum Strings {
     /// The Buttons section.
     public static let buttons = "Buttons"
 
+    /// The Sensor section.
+    public static let sensor = "Sensor"
+
     /// The Settings section.
     public static let settings = "Settings"
 
@@ -51,6 +54,74 @@ public enum Strings {
 
     /// Label of the app version.
     public static let version = "Version"
+
+    /// Label of the mouse's firmware version.
+    public static let firmware = "Firmware"
+
+    /// Label of the launch at login toggle.
+    public static let launchAtLogin = "Launch at login"
+
+    /// Shown while the login item waits for the user's approval.
+    public static let launchAtLoginNeedsApproval =
+        "Allow openatk in System Settings, under General, Login Items."
+
+    /// Shown in place of a setting the mouse did not report.
+    public static let unknown = "Unknown"
+
+    /// Label of the lift-off picker.
+    public static let liftOff = "Lift-off distance"
+
+    /// Label of the debounce picker.
+    public static let debounce = "Debounce time"
+
+    /// Warns about a low debounce time.
+    public static let debounceWarning = "Below 4 ms, a single click can register as two."
+
+    /// Label of the motion sync toggle.
+    public static let motionSync = "Motion sync"
+
+    /// Label of the linear correction toggle.
+    public static let linearCorrection = "Linear correction"
+
+    /// Label of the ripple control toggle.
+    public static let rippleControl = "Ripple control"
+
+    /// Label of the sensor angle row.
+    public static let angle = "Sensor angle"
+
+    /// The unit beside the angle field.
+    public static let degreeSign = "°"
+
+    /// Label of the sleep picker.
+    public static let sleepTimer = "Sleep timer"
+
+    /// Label of the far distance toggle.
+    public static let farDistance = "Far distance mode"
+
+    /// Why launch at login could not be changed.
+    public static func launchAtLoginFailed(reason: String) -> String {
+        "Could not change launch at login: \(reason)"
+    }
+
+    /// A lift-off height.
+    public static func liftOffHeight(tenths: UInt8) -> String {
+        "\(tenths / 10).\(tenths % 10) mm"
+    }
+
+    /// A debounce time.
+    public static func milliseconds(_ milliseconds: UInt8) -> String {
+        "\(milliseconds) ms"
+    }
+
+    /// A sleep time: whole minutes as minutes, anything else as seconds.
+    public static func sleepTime(seconds: UInt16) -> String {
+        if seconds > 0,
+           seconds.isMultiple(of: 60) {
+            return "\(seconds / 60) min"
+        }
+
+        return "\(seconds) s"
+    }
 
     /// A battery charge.
     public static func batteryPercent(_ percent: UInt8) -> String {

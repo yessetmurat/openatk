@@ -90,6 +90,21 @@ impl Frame {
         })
     }
 
+    /// Builds a far distance mode request. The mode has no check byte.
+    #[must_use]
+    pub fn set_far_distance(enabled: bool) -> Frame {
+        let mut data = [0; DATA_LEN];
+        data[0] = u8::from(enabled);
+
+        Frame {
+            command: Command::SetFarDistanceMode.code(),
+            status: 0,
+            address: 0,
+            length: DATA_LEN as u8,
+            data,
+        }
+    }
+
     /// Encodes the frame as a HID report with its checksum.
     #[must_use]
     pub fn to_report(&self) -> [u8; REPORT_LEN] {

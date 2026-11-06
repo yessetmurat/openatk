@@ -37,7 +37,7 @@ fn rejects_more_than_ten_bytes() {
 
 #[test]
 fn parse_dump_rejects_unwritable_address() {
-    let error = parse_dump("0x0000 01\n0x000a 01\n").expect_err("0x0a is in a gap");
+    let error = parse_dump("0x0000 01\n0x00b3 01\n").expect_err("0xb3 is in a gap");
 
     assert!(error.contains("line 2"));
 }
@@ -63,7 +63,13 @@ fn parse_dump_accepts_a_full_dump() {
 
 #[test]
 fn every_dump_range_is_writable_and_round_trips() {
-    for (start, len) in dump_ranges() {
+    let ranges = dump_ranges();
+
+    for block in [(0x0a, 2), (0xa9, 10), (0xb5, 6), (0xbd, 4)] {
+        assert!(ranges.contains(&block), "{block:?}");
+    }
+
+    for (start, len) in ranges {
         let line = format_line(start, &vec![0; usize::from(len)]);
 
         assert!(

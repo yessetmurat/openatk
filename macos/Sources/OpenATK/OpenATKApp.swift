@@ -17,9 +17,17 @@ struct OpenATKApp: App {
         @Bindable var preferences = delegate.preferences
 
         Window(Strings.appName, id: MainWindow.sceneID) {
-            MainWindow(model: delegate.model, preferences: preferences)
+            MainWindow(
+                model: delegate.model,
+                preferences: preferences,
+                launchAtLogin: delegate.launchAtLogin
+            )
         }
         .windowResizability(.contentSize)
+        // The app delegate decides at launch whether the window opens.
+        .defaultLaunchBehavior(.suppressed)
+        // Restoration brings the window back past `.suppressed`, also at a login start.
+        .restorationBehavior(.disabled)
 
         MenuBarExtra(isInserted: $preferences.menuBarIcon) {
             MenuBarContent(delegate: delegate)
