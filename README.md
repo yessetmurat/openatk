@@ -58,7 +58,13 @@ If the grant is stale after a change of signature:
 tccutil reset ListenEvent app.openatk
 ```
 
-### Permissions
+### Release
+
+`macos/scripts/package_release.sh` builds `macos/build/openatk-<version>.zip`, signed for distribution. Set `OPENATK_RELEASE_IDENTITY` to a Developer ID Application identity. To notarize too, save a profile once with `xcrun notarytool store-credentials <profile>` and set `OPENATK_NOTARY_PROFILE` to it.
+
+A pushed tag `v<x.y.z>` runs `.github/workflows/release.yml`: it builds, signs, notarizes, attaches the zip to a GitHub release and writes the cask in the Homebrew tap. The workflow file lists the secrets it needs.
+
+## Permissions
 
 The app needs Input Monitoring, because the device exposes keyboard collections. `settings_tool` run from a terminal uses the terminal's Input Monitoring grant, not the app's.
 

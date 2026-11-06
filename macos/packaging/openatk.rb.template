@@ -1,0 +1,15 @@
+cask "openatk" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "@URL@"
+  name "openatk"
+  desc "Light native settings app for ATK mice"
+  homepage "@HOMEPAGE@"
+
+  depends_on macos: ">= :sequoia"
+
+  app "openatk.app"
+
+  zap trash: "~/Library/Preferences/app.openatk.plist"
+end
