@@ -8,6 +8,15 @@ Status: macOS only for now.
 
 openatk is not affiliated with ATK. Firmware updates stay in ATK HUB: openatk never sends upgrade commands.
 
+## Devices
+
+| Device | Supported | Tested |
+|---|:---:|:---:|
+| ATK F1 EXTREME (2.4 GHz dongle and cable) | ✅ | ✅ |
+| Other ATK and VXE mice | ❌ | ❌ |
+
+Other models share the protocol, but openatk refuses to change their settings until they are added and tested.
+
 ## Layout
 
 - `core`: Rust protocol library and device service.
@@ -44,7 +53,7 @@ OPENATK_SIGN_IDENTITY="<signing identity>" macos/scripts/build_app.sh
 If the grant is stale after a change of signature:
 
 ```sh
-tccutil reset ListenEvent io.github.openatk.app
+tccutil reset ListenEvent app.openatk
 ```
 
 ### Permissions
@@ -78,4 +87,4 @@ IBM Plex Sans, under the SIL Open Font License. See `macos/Resources/fonts`.
 
 ## Licence
 
-Not chosen yet.
+MIT, see `LICENSE`. IBM Plex Sans keeps its own licence.

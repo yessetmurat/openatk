@@ -3,6 +3,7 @@ members = ["core", "ffi"]
 resolver = "3"
 
 [workspace.package]
+license = "MIT"
 edition = "2024"
 rust-version = "1.95"
 

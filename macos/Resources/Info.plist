@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>io.github.openatk.app</string>
+    <string>app.openatk</string>
     <key>CFBundleName</key>
     <string>openatk</string>
     <key>CFBundleExecutable</key>
