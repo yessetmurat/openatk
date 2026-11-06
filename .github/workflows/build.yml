@@ -1,4 +1,4 @@
-name: CI
+name: Build
 
 on:
   push:
@@ -10,15 +10,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Rust checks
+      - name: Lint
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
-          cargo test
-          cargo test -p openatk-core --example settings_tool
-
-      - name: Swift tests
+      - name: Build
         run: |
           macos/scripts/build_rust.sh
+          swift build --package-path macos
+      - name: Test
+        run: |
+          cargo test
+          cargo test -p openatk-core --example settings_tool
           swift test --package-path macos
