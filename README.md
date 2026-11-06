@@ -6,7 +6,7 @@ It changes DPI and polling rate, remaps buttons (including keyboard keys), switc
 
 Editing applies to the active profile only: switch to a profile to change it.
 
-Status: macOS only for now. Launch at login is not yet verified across a real logout.
+Status: macOS only for now. Windows and Linux clients are planned over the same `core`. Launch at login is not yet verified across a real logout.
 
 openatk is not affiliated with ATK. Firmware updates stay in ATK HUB: openatk never sends upgrade commands.
 
