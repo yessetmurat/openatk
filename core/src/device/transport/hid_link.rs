@@ -7,7 +7,7 @@ use std::thread;
 
 use hidapi::{DeviceInfo, HidApi, HidDevice};
 
-use crate::device::device_path::{self, USAGE, USAGE_PAGE, VENDOR_ID};
+use crate::device::transport::device_path::{self, USAGE, USAGE_PAGE, VENDOR_ID};
 use crate::device::{DevicePath, Input, Link, MouseError};
 use crate::protocol::REPORT_LEN;
 

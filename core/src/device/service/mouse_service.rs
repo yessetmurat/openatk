@@ -3,10 +3,10 @@
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
-use crate::device::hotplug;
 use crate::device::service::hid_connector::HidConnector;
 use crate::device::service::polling::PollIntervals;
 use crate::device::service::worker;
+use crate::device::transport::hotplug;
 use crate::device::{Inbox, Input, MouseCommand, MouseEvent, Timing};
 
 /// Handle to the thread that owns the connection. Dropping it asks the thread to stop
