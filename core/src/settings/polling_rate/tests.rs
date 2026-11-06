@@ -16,6 +16,8 @@ fn polling_codes_match_spec() {
         assert_eq!(PollingRate::from_code(code), Some(rate));
         assert_eq!(rate.code(), code);
         assert_eq!(rate.hz(), hz);
+        assert_eq!(PollingRate::from_hz(hz), Some(rate));
     }
     assert_eq!(PollingRate::from_code(3), None);
+    assert_eq!(PollingRate::from_hz(333), None);
 }

@@ -147,18 +147,7 @@ fn watch() -> Result<(), String> {
 
 fn set_polling(hz: &str) -> Result<(), String> {
     let hz: u32 = hz.parse().map_err(|_| format!("bad rate: {hz}"))?;
-    let rate = [
-        PollingRate::Hz125,
-        PollingRate::Hz250,
-        PollingRate::Hz500,
-        PollingRate::Hz1000,
-        PollingRate::Hz2000,
-        PollingRate::Hz4000,
-        PollingRate::Hz8000,
-    ]
-    .into_iter()
-    .find(|rate| rate.hz() == hz)
-    .ok_or_else(|| format!("unsupported rate: {hz} Hz"))?;
+    let rate = PollingRate::from_hz(hz).ok_or_else(|| format!("unsupported rate: {hz} Hz"))?;
     let mut mouse = connect()?;
 
     mouse.set_polling(rate).map_err(|error| error.to_string())?;

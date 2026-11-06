@@ -20,6 +20,21 @@ pub enum PollingRate {
 }
 
 impl PollingRate {
+    /// Returns the rate with this frequency in hertz, or `None` for an unknown frequency.
+    #[must_use]
+    pub fn from_hz(hz: u32) -> Option<Self> {
+        match hz {
+            125 => Some(Self::Hz125),
+            250 => Some(Self::Hz250),
+            500 => Some(Self::Hz500),
+            1000 => Some(Self::Hz1000),
+            2000 => Some(Self::Hz2000),
+            4000 => Some(Self::Hz4000),
+            8000 => Some(Self::Hz8000),
+            _ => None,
+        }
+    }
+
     /// Returns the rate stored under this EEPROM code, or `None` for an unknown code.
     #[must_use]
     pub fn from_code(code: u8) -> Option<Self> {
