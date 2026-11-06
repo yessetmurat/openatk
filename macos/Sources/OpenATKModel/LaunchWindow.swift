@@ -6,8 +6,8 @@
 //
 
 /// Whether the window opens at launch, and when. The scene never opens it by itself. The decision
-/// comes from the app delegate and the way to open comes from a view, in either order, so whichever
-/// arrives second opens the window.
+/// comes from the app delegate and the way to open comes from the app's scene body, in either
+/// order, so whichever arrives second opens the window.
 public struct LaunchWindow {
 
     /// Whether this start shows the window. A login start stays in the menu bar, so without the

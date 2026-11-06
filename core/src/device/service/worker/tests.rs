@@ -162,6 +162,7 @@ impl Device {
         match request.command_code() {
             _ if self.silent => None,
             0x03 => Some((0, vec![u8::from(self.online)])),
+            0x1d => Some((0, vec![0x01, 0x0a])),
             _ if !self.online || self.mouse_silent => None,
             0x04 => Some((0, vec![BATTERY.percent, 0])),
             0x0e => Some((0, vec![0])),

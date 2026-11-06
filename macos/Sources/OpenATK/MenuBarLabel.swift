@@ -8,23 +8,15 @@
 import OpenATKModel
 import SwiftUI
 
-/// The mouse symbol beside the battery. It lives as long as the app, also with the window closed
-/// and with the icon turned off, so it also hands the delegate the action that opens the window.
+/// The mouse symbol beside the battery.
 struct MenuBarLabel: View {
 
     let delegate: AppDelegate
-
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack {
             Image(systemName: "computermouse")
             Text(MenuContent.title(snapshot: delegate.model.snapshot))
-        }
-        .onAppear {
-            delegate.windowOpenerReady {
-                openWindow(id: MainWindow.sceneID)
-            }
         }
     }
 

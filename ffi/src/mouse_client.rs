@@ -14,7 +14,7 @@ pub enum MouseUpdate {
     /// Every setting, as read from the mouse.
     Snapshot {
         /// The settings.
-        snapshot: SnapshotValue,
+        snapshot: Box<SnapshotValue>,
     },
     /// The battery state.
     Battery {
@@ -73,7 +73,7 @@ impl From<MouseEvent> for MouseUpdate {
         match event {
             MouseEvent::NotConnected => Self::NotConnected,
             MouseEvent::Snapshot(snapshot) => Self::Snapshot {
-                snapshot: SnapshotValue::from(&snapshot),
+                snapshot: Box::new(SnapshotValue::from(&snapshot)),
             },
             MouseEvent::Battery(battery) => Self::Battery {
                 percent: battery.percent,

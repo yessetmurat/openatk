@@ -41,6 +41,10 @@ fn sample_snapshot() -> MouseSnapshot {
             major: 3,
             minor: 0x10,
         }),
+        dongle_firmware: Some(FirmwareVersion {
+            major: 1,
+            minor: 0x0a,
+        }),
         lift_off_tenths: Some(12),
         debounce_ms: Some(4),
         debounce_options_ms: vec![0, 4, 20],
@@ -94,6 +98,7 @@ fn snapshot_converts_new_fields() {
     let value = SnapshotValue::from(&sample_snapshot());
 
     assert_eq!(value.firmware.as_deref(), Some("3.10"));
+    assert_eq!(value.dongle_firmware.as_deref(), Some("1.0a"));
     assert_eq!(value.lift_off_tenths, Some(12));
     assert_eq!(
         (value.lift_off_min_tenths, value.lift_off_max_tenths),
@@ -165,12 +170,14 @@ fn unknown_angle_fields_stay_unknown_inside_a_present_angle() {
 fn unknown_fields_stay_unknown() {
     let mut snapshot = sample_snapshot();
     snapshot.firmware = None;
+    snapshot.dongle_firmware = None;
     snapshot.lift_off_tenths = None;
     snapshot.far_distance = None;
 
     let value = SnapshotValue::from(&snapshot);
 
     assert_eq!(value.firmware, None);
+    assert_eq!(value.dongle_firmware, None);
     assert_eq!(value.lift_off_tenths, None);
     assert_eq!(value.far_distance, None);
 }

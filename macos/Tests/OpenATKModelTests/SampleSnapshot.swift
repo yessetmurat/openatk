@@ -30,6 +30,7 @@ extension SnapshotValue {
             stages: stages.map { StageValue(x: $0, y: $0) },
             buttons: buttons,
             firmware: "3.01",
+            dongleFirmware: "1.0a",
             liftOffTenths: 7,
             liftOffMinTenths: 7,
             liftOffMaxTenths: 17,

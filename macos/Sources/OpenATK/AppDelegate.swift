@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let launchAtLogin = LaunchAtLoginSetting(service: SMAppService.mainApp)
 
-    /// Opens the window. Only a view can reach `openWindow`, so `MenuBarLabel` sets this.
+    /// Opens the window. Only SwiftUI can reach `openWindow`, so `OpenATKApp` sets this.
     private var openMainWindow: (() -> Void)?
 
     private var launchWindow = LaunchWindow()

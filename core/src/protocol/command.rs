@@ -23,6 +23,8 @@ pub enum Command {
     SetFarDistanceMode = 0x16,
     /// Whether far distance mode is on.
     GetFarDistanceMode = 0x17,
+    /// Dongle firmware version.
+    GetDongleVersion = 0x1d,
 }
 
 impl Command {
@@ -40,6 +42,7 @@ impl Command {
             0x12 => Some(Self::GetMouseVersion),
             0x16 => Some(Self::SetFarDistanceMode),
             0x17 => Some(Self::GetFarDistanceMode),
+            0x1d => Some(Self::GetDongleVersion),
             _ => None,
         }
     }

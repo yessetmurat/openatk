@@ -36,6 +36,8 @@ pub struct SnapshotValue {
     pub buttons: Vec<ButtonValue>,
     /// Firmware version as ATK HUB shows it, absent when the mouse does not tell.
     pub firmware: Option<String>,
+    /// Dongle firmware version, absent on the cable or when the dongle does not tell.
+    pub dongle_firmware: Option<String>,
     /// Lift-off height in tenths of a millimetre, absent when it cannot be read.
     pub lift_off_tenths: Option<u8>,
     /// Lowest lift-off height on offer, in tenths of a millimetre.
@@ -122,6 +124,7 @@ impl From<&MouseSnapshot> for SnapshotValue {
                 .collect(),
             buttons,
             firmware: snapshot.firmware.map(|version| version.to_string()),
+            dongle_firmware: snapshot.dongle_firmware.map(|version| version.to_string()),
             lift_off_tenths: snapshot.lift_off_tenths,
             lift_off_min_tenths: *lift_off_range.start(),
             lift_off_max_tenths: *lift_off_range.end(),

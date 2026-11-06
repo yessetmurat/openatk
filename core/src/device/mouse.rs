@@ -21,6 +21,9 @@ pub struct Mouse<L, C> {
     session: Session<L, C>,
     model: &'static Model,
     path: DevicePath,
+    /// The dongle firmware once asked for: the outer `None` means not asked yet on this
+    /// connection, the inner one that the dongle gave no version.
+    dongle_firmware: Option<Option<FirmwareVersion>>,
 }
 
 impl<L: Link, C> Mouse<L, C> {
@@ -61,6 +64,7 @@ impl<L: Link, C> Mouse<L, C> {
             session,
             model,
             path,
+            dongle_firmware: None,
         }
     }
 
@@ -86,8 +90,10 @@ impl<L: Link, C> Mouse<L, C> {
     /// # Errors
     /// Any exchange error, and a protocol error for a malformed block, a bad check on a
     /// used DPI stage, a button or a shortcut. A bad check on an unused stage is ignored.
-    /// A sensor block, firmware or far distance read the mouse rejects, and a sensor value
-    /// that cannot be read, leave that field `None`.
+    /// A sensor block, firmware, dongle firmware or far distance read the dongle or the mouse
+    /// rejects, and a sensor value that cannot be read, leave that field `None`. A read nobody
+    /// answers is `MouseError::Timeout`, except the dongle firmware: it is asked once per
+    /// connection, and silence leaves it `None` after the one stall of a timed-out read.
     pub fn snapshot(&mut self) -> Result<MouseSnapshot, MouseError> {
         let profile = self
             .session
@@ -106,6 +112,7 @@ impl<L: Link, C> Mouse<L, C> {
         let shortcuts = self.read_shortcuts(&buttons)?;
 
         let firmware = rejected_as_none(self.read_firmware())?;
+        let dongle_firmware = self.dongle_firmware()?;
         let far_distance = rejected_as_none(self.read_far_distance())?.and_then(check::flag);
         let lift_off = rejected_as_none(self.read_lift_off())?;
         let sensor_block = rejected_as_none(self.read_sensor_block())?;
@@ -125,6 +132,7 @@ impl<L: Link, C> Mouse<L, C> {
             buttons,
             shortcuts,
             firmware,
+            dongle_firmware,
             lift_off_tenths: lift_off.and_then(|item| item.millimetres_tenths()),
             debounce_ms: sensor_block.and_then(|block| block.debounce_ms()),
             debounce_options_ms: self.model.debounce_ms.to_vec(),
@@ -491,9 +499,39 @@ impl<L: Link, C> Mouse<L, C> {
     }
 
     fn read_firmware(&mut self) -> Result<FirmwareVersion, MouseError> {
-        let reply = self
-            .session
-            .exchange(&Frame::request(Command::GetMouseVersion))?;
+        self.read_version(Command::GetMouseVersion)
+    }
+
+    /// Gives the dongle firmware, asking for it only the first time on this connection.
+    fn dongle_firmware(&mut self) -> Result<Option<FirmwareVersion>, MouseError> {
+        if let Some(known) = self.dongle_firmware {
+            return Ok(known);
+        }
+
+        let firmware = self.read_dongle_firmware()?;
+
+        self.dongle_firmware = Some(firmware);
+
+        Ok(firmware)
+    }
+
+    /// Reads the dongle firmware: only the dongle path has one.
+    fn read_dongle_firmware(&mut self) -> Result<Option<FirmwareVersion>, MouseError> {
+        if self.path != DevicePath::Dongle {
+            return Ok(None);
+        }
+
+        // The only read where a timeout is not an error. The field is decorative and nothing
+        // depends on it, while the worker takes a timeout for a sleeping mouse, so a dongle that
+        // stays silent here would otherwise drop a working connection again and again.
+        match self.read_version(Command::GetDongleVersion) {
+            Err(MouseError::Timeout) => Ok(None),
+            result => rejected_as_none(result),
+        }
+    }
+
+    fn read_version(&mut self, command: Command) -> Result<FirmwareVersion, MouseError> {
+        let reply = self.session.exchange(&Frame::request(command))?;
 
         Ok(FirmwareVersion {
             major: reply.payload()[0],

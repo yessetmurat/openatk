@@ -57,6 +57,8 @@ pub struct MouseSnapshot {
     pub shortcuts: Vec<(Button, Shortcut)>,
     /// Firmware version.
     pub firmware: Option<FirmwareVersion>,
+    /// Dongle firmware version, `None` on the cable path or when the dongle refuses it.
+    pub dongle_firmware: Option<FirmwareVersion>,
     /// Lift-off height in tenths of a millimetre.
     pub lift_off_tenths: Option<u8>,
     /// Debounce time in milliseconds.

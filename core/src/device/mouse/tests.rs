@@ -34,6 +34,9 @@ struct Fake {
     reject_writes: bool,
     zero_length: bool,
     firmware: Option<[u8; 2]>,
+    dongle_firmware: Option<[u8; 2]>,
+    silent_dongle_version: bool,
+    silent_mouse_version: bool,
     far_distance: Option<u8>,
     unavailable_status: u8,
     reject_read_at: Option<u16>,
@@ -82,7 +85,13 @@ impl Fake {
             0x04 => Some((0, self.battery.to_vec())),
             0x0e => Some((0, vec![self.profile])),
             0x10 => Some((0, vec![self.cid, self.mid, 0x21])),
+            0x12 if self.silent_mouse_version => None,
             0x12 => Some(match self.firmware {
+                Some(version) => (0, version.to_vec()),
+                None => (self.unavailable_status, Vec::new()),
+            }),
+            0x1d if self.silent_dongle_version => None,
+            0x1d => Some(match self.dongle_firmware {
                 Some(version) => (0, version.to_vec()),
                 None => (self.unavailable_status, Vec::new()),
             }),
@@ -176,6 +185,9 @@ fn new_fake() -> Fake {
         reject_writes: false,
         zero_length: false,
         firmware: Some([0x03, 0x01]),
+        dongle_firmware: Some([0x01, 0x0a]),
+        silent_dongle_version: false,
+        silent_mouse_version: false,
         far_distance: Some(0),
         unavailable_status: 255,
         reject_read_at: None,
@@ -1340,4 +1352,140 @@ fn unwritable_neighbour_0xb3_is_refused() {
 
     assert_eq!(result, Err(ProtocolError::AddressNotWritable(0xb3).into()));
     assert!(fake.borrow().log.is_empty());
+}
+
+#[test]
+fn dongle_firmware_decodes() {
+    let (mut mouse, _) = rig(DevicePath::Dongle);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(
+        snapshot.dongle_firmware,
+        Some(FirmwareVersion {
+            major: 1,
+            minor: 10
+        })
+    );
+}
+
+#[test]
+fn cable_path_reads_no_dongle_version() {
+    let (mut mouse, fake) = rig(DevicePath::Cable);
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.dongle_firmware, None);
+    assert!(!fake.borrow().codes().contains(&0x1d));
+}
+
+#[test]
+fn rejected_dongle_version_is_absent() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    fake.borrow_mut().dongle_firmware = None;
+    fake.borrow_mut().unavailable_status = 1;
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.dongle_firmware, None);
+    assert_eq!(
+        snapshot.firmware,
+        Some(FirmwareVersion { major: 3, minor: 1 })
+    );
+}
+
+fn dongle_version_requests(fake: &Rc<RefCell<Fake>>) -> usize {
+    fake.borrow()
+        .codes()
+        .iter()
+        .filter(|code| **code == 0x1d)
+        .count()
+}
+
+#[test]
+fn unanswered_dongle_version_leaves_the_field_empty() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    fake.borrow_mut().silent_dongle_version = true;
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert_eq!(snapshot.dongle_firmware, None);
+    assert_eq!(
+        snapshot.firmware,
+        Some(FirmwareVersion { major: 3, minor: 1 })
+    );
+    assert!(snapshot.far_distance.is_some());
+    assert!(snapshot.lift_off_tenths.is_some());
+}
+
+#[test]
+fn dongle_firmware_is_read_once_per_connection() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    let expected = Some(FirmwareVersion {
+        major: 1,
+        minor: 10,
+    });
+
+    let first = mouse.snapshot().expect("first snapshot");
+    let second = mouse.snapshot().expect("second snapshot");
+
+    assert_eq!(first.dongle_firmware, expected);
+    assert_eq!(second.dongle_firmware, expected);
+    assert_eq!(dongle_version_requests(&fake), 1);
+}
+
+#[test]
+fn silent_dongle_is_not_asked_again_on_this_connection() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    fake.borrow_mut().silent_dongle_version = true;
+    mouse.snapshot().expect("first snapshot");
+    let requests = dongle_version_requests(&fake);
+
+    mouse.snapshot().expect("second snapshot");
+
+    assert_eq!(dongle_version_requests(&fake), requests);
+}
+
+#[test]
+fn rejected_dongle_version_is_not_asked_again_on_this_connection() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    fake.borrow_mut().dongle_firmware = None;
+    fake.borrow_mut().unavailable_status = 1;
+
+    mouse.snapshot().expect("first snapshot");
+    mouse.snapshot().expect("second snapshot");
+
+    assert_eq!(dongle_version_requests(&fake), 1);
+}
+
+#[test]
+fn new_connection_reads_the_dongle_version_again() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    mouse.snapshot().expect("first snapshot");
+
+    let mut mouse = Mouse::new(mouse.into_session(), model(), DevicePath::Dongle);
+    mouse.snapshot().expect("second snapshot");
+
+    assert_eq!(dongle_version_requests(&fake), 2);
+}
+
+#[test]
+fn snapshot_stopped_before_the_dongle_version_does_not_settle_it() {
+    let (mut mouse, fake) = rig(DevicePath::Dongle);
+    fake.borrow_mut().silent_reads = true;
+    assert_eq!(mouse.snapshot(), Err(MouseError::Timeout));
+    fake.borrow_mut().silent_reads = false;
+
+    let snapshot = mouse.snapshot().expect("snapshot");
+
+    assert!(snapshot.dongle_firmware.is_some());
+}
+
+#[test]
+fn unanswered_mouse_version_is_still_a_timeout() {
+    let (session, fake, _) = rig_with(new_fake());
+    let mut mouse = Mouse::new(session, model(), DevicePath::Cable);
+    fake.borrow_mut().silent_mouse_version = true;
+
+    assert_eq!(mouse.snapshot(), Err(MouseError::Timeout));
 }

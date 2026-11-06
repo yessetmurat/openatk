@@ -58,6 +58,9 @@ public enum Strings {
     /// Label of the mouse's firmware version.
     public static let firmware = "Firmware"
 
+    /// Label of the dongle's firmware version.
+    public static let dongleFirmware = "Dongle firmware"
+
     /// Label of the launch at login toggle.
     public static let launchAtLogin = "Launch at login"
 

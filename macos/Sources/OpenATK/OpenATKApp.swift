@@ -13,8 +13,15 @@ struct OpenATKApp: App {
 
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Scene {
         @Bindable var preferences = delegate.preferences
+
+        // From the app and not a view: with the icon off, no view may ever appear to hand it over.
+        let _ = delegate.windowOpenerReady {
+            openWindow(id: MainWindow.sceneID)
+        }
 
         Window(Strings.appName, id: MainWindow.sceneID) {
             MainWindow(

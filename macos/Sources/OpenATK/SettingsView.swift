@@ -27,6 +27,10 @@ struct SettingsView: View {
                 if let firmware = model.snapshot?.firmware {
                     LabeledContent(Strings.firmware, value: firmware)
                 }
+
+                if let dongleFirmware = model.snapshot?.dongleFirmware {
+                    LabeledContent(Strings.dongleFirmware, value: dongleFirmware)
+                }
             } footer: {
                 if launchAtLogin.needsApproval {
                     Text(Strings.launchAtLoginNeedsApproval)

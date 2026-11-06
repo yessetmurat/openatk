@@ -21,6 +21,7 @@ fn sensor_codes_round_trip() {
         (0x12, Command::GetMouseVersion),
         (0x16, Command::SetFarDistanceMode),
         (0x17, Command::GetFarDistanceMode),
+        (0x1d, Command::GetDongleVersion),
     ] {
         assert_eq!(Command::from_code(code), Some(command));
         assert_eq!(command.code(), code);
