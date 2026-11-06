@@ -16,5 +16,13 @@ cp "$macos/Resources/Info.plist" "$app/Contents/Info.plist"
 mkdir "$app/Contents/Resources/fonts"
 cp "$macos"/Resources/fonts/*.ttf "$macos/Resources/fonts/OFL.txt" "$app/Contents/Resources/fonts/"
 
-# arm64 refuses unsigned code; an ad-hoc signature is enough.
-codesign --force --sign - "$app"
+# arm64 refuses unsigned code. An ad-hoc signature is enough to run, but its identity is the
+# cdhash, so every rebuild loses the Input Monitoring grant. Set OPENATK_SIGN_IDENTITY to a
+# stable signing identity to keep the grant across rebuilds.
+if [ -n "${OPENATK_SIGN_IDENTITY:-}" ]; then
+    echo "Signing with identity: $OPENATK_SIGN_IDENTITY"
+    codesign --force --sign "$OPENATK_SIGN_IDENTITY" "$app"
+else
+    echo "Signing ad-hoc (OPENATK_SIGN_IDENTITY is not set)"
+    codesign --force --sign - "$app"
+fi

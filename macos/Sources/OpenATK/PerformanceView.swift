@@ -10,9 +10,9 @@ import OpenATKModel
 import SwiftUI
 
 /// Polling rate and DPI stages. Every control shows the snapshot and only asks the model to
-/// write, so a pick is not shown before the mouse confirms it. A write disables the pickers and
-/// the stepper but not the DPI fields: disabling a field drops its focus, which would end
-/// Tab-through editing, and the model already ignores typing while a write is in flight.
+/// write, so a pick is not shown before the mouse confirms it. Nothing is disabled during a
+/// write, so the window does not flicker: the model refuses sends while one is in flight, and
+/// the getters read the snapshot, so a click then changes nothing on screen.
 struct PerformanceView: View {
 
     let model: MouseModel
@@ -66,7 +66,7 @@ struct PerformanceView: View {
             }
         }
         .pickerStyle(.menu)
-        .disabled(model.isPending)
+        .id(model.refreshCount)
     }
 
     private func stageCountStepper(_ snapshot: SnapshotValue) -> some View {
@@ -82,7 +82,7 @@ struct PerformanceView: View {
                     onDecrement: count > range.lowerBound ? { model.changeStageCount(by: -1) } : nil
                 )
                 .labelsHidden()
-                .disabled(model.isPending)
+                .id(model.refreshCount)
             }
         }
     }
@@ -108,7 +108,7 @@ struct PerformanceView: View {
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
-            .disabled(model.isPending)
+            .id(model.refreshCount)
         }
     }
 

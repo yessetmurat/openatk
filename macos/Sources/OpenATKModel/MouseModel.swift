@@ -25,9 +25,25 @@ public final class MouseModel {
     /// Why the last write or background operation failed.
     public private(set) var errorText: String?
 
+    /// A change held until the user confirms it.
+    public internal(set) var confirmation: ButtonRequest?
+
+    /// Counts the snapshots and failures received. A view that applies it as its identity is
+    /// rebuilt on each, so a control the user changed without effect shows the mouse's value.
+    public private(set) var refreshCount = 0
+
+    /// The button whose shortcut key is being captured.
+    public internal(set) var captureButton: MouseButton?
+
+    /// Why the last captured key was refused.
+    public internal(set) var captureMessage: String?
+
     /// Text typed into a DPI field and not yet written. There is only one: an edit in another
     /// field commits this one first, so no typed text is replaced unseen.
-    private var stageDraft: (index: Int, text: String)?
+    ///
+    /// `isSent` marks a draft whose write is in flight: the field keeps showing it until the
+    /// mouse answers, so it does not flash the old value, and it is never written twice.
+    private var stageDraft: (index: Int, text: String, isSent: Bool)?
 
     @ObservationIgnored private let sink: any CommandSink
 
@@ -43,7 +59,10 @@ public final class MouseModel {
             snapshot = nil
             isPending = false
             stageDraft = nil
+            cancelCapture()
+            confirmation = nil
         case .snapshot(let snapshot):
+            refreshCount += 1
             self.snapshot = snapshot
             isPending = false
             stageDraft = nil
@@ -51,6 +70,7 @@ public final class MouseModel {
             snapshot?.percent = percent
             snapshot?.charging = charging
         case .commandFailed(let message):
+            refreshCount += 1
             errorText = message
             isPending = false
             stageDraft = nil
@@ -68,6 +88,8 @@ public final class MouseModel {
             errorText = nil
             isPending = true
             stageDraft = nil
+            cancelCapture()
+            confirmation = nil
         }
 
         sink.send(command: command)
@@ -117,22 +139,29 @@ public final class MouseModel {
             return
         }
 
-        stageDraft = (index, text)
+        stageDraft = (index, text, false)
     }
 
-    /// Drops the typed text, so the field shows the mouse's value again.
+    /// Drops the typed text, so the field shows the mouse's value again. A draft whose write is
+    /// in flight stays until the mouse answers.
     public func discardStageEdit() {
+        guard stageDraft?.isSent != true else {
+            return
+        }
+
         stageDraft = nil
     }
 
-    /// Writes the text typed for the stage at `index`, snapped to the sensor's grid, and drops it.
+    /// Writes the text typed for the stage at `index`, snapped to the sensor's grid. The text stays
+    /// shown until the mouse answers a write; without a write it is dropped.
     ///
     /// Sends nothing when nothing was typed for this stage, when the text is the shown value, is
     /// not a number or snaps to the shown value, or when the stage has different X and Y values,
     /// which this app shows read-only.
     public func commitStage(index: Int) {
         guard let stageDraft,
-              stageDraft.index == index else {
+              stageDraft.index == index,
+              !stageDraft.isSent else {
             return
         }
 
@@ -158,6 +187,10 @@ public final class MouseModel {
         }
 
         send(.setStageDpi(index: UInt8(index), x: dpi, y: dpi))
+
+        if isPending {
+            self.stageDraft = (index, stageDraft.text, true)
+        }
     }
 
     /// Sets the polling rate, unless it is the current one.

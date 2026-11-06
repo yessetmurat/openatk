@@ -1,0 +1,58 @@
+//
+//  MenuBarContent.swift
+//  OpenATK
+//
+//  Created by Yesset Murat on 06.11.2026.
+//
+
+import AppKit
+import OpenATKModel
+import SwiftUI
+
+/// The native menu: maps the entries of `MenuContent` to items. A checkable item shows the
+/// snapshot and only asks the model to write, so a pick is not shown before the mouse confirms it.
+struct MenuBarContent: View {
+
+    let model: MouseModel
+
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let entries = MenuContent.entries(snapshot: model.snapshot, strings: Strings.self)
+
+        ForEach(entries.indices, id: \.self) { index in
+            item(entries[index])
+        }
+    }
+
+    @ViewBuilder private func item(_ entry: MenuEntry) -> some View {
+        switch entry {
+        case .info(let title):
+            Text(title)
+        case .choice(let choice):
+            toggle(choice)
+        case .separator:
+            Divider()
+        case .openWindow(let title):
+            Button(title) {
+                openWindow(id: MainWindow.sceneID)
+                NSApp.activate()
+            }
+        case .quit(let title):
+            Button(title) {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func toggle(_ choice: MenuChoice) -> some View {
+        let isOn = Binding(
+            get: { choice.isChecked },
+            set: { _ in model.pick(choice) }
+        )
+
+        return Toggle(choice.title, isOn: isOn)
+            .disabled(!choice.isEnabled)
+    }
+
+}

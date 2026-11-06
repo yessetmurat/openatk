@@ -225,13 +225,46 @@ struct MouseModelTests {
         #expect(sink.commands == [.setStageDpi(index: 1, x: 1230, y: 1230)])
     }
 
-    @Test func commitShowsTheMouseValueUntilConfirmed() {
+    @Test func committedDraftStaysWhilePending() {
         model.apply(.snapshot(snapshot: .sample()))
         model.editStage(index: 1, text: "1234")
 
         model.commitStage(index: 1)
 
+        #expect(model.isPending)
+        #expect(model.stageText(index: 1) == "1234")
+    }
+
+    @Test func committedDraftClearsOnSnapshot() {
+        model.apply(.snapshot(snapshot: .sample()))
+        model.editStage(index: 1, text: "1234")
+        model.commitStage(index: 1)
+
+        model.apply(.snapshot(snapshot: .sample(stages: [400, 1230, 1200, 1600])))
+
+        #expect(model.stageText(index: 1) == "1230")
+    }
+
+    @Test func committedDraftClearsOnFailure() {
+        model.apply(.snapshot(snapshot: .sample()))
+        model.editStage(index: 1, text: "1234")
+        model.commitStage(index: 1)
+
+        model.apply(.commandFailed(message: "timeout"))
+
         #expect(model.stageText(index: 1) == "800")
+    }
+
+    @Test func committedDraftIsNotSentTwice() {
+        model.apply(.snapshot(snapshot: .sample()))
+        model.editStage(index: 1, text: "1234")
+        model.commitStage(index: 1)
+
+        model.commitStage(index: 1)
+        model.discardStageEdit()
+
+        #expect(sink.commands == [.setStageDpi(index: 1, x: 1230, y: 1230)])
+        #expect(model.stageText(index: 1) == "1234")
     }
 
     @Test func commitOfAnotherStageSendsNothing() {

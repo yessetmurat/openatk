@@ -10,7 +10,11 @@ import OpenATKBindings
 extension SnapshotValue {
 
     /// A snapshot like the real mouse's, with the given rate and equal-axis stages.
-    static func sample(pollingHz: UInt32 = 250, stages: [UInt32] = [400, 800, 1200, 1600]) -> Self {
+    static func sample(
+        pollingHz: UInt32 = 250,
+        stages: [UInt32] = [400, 800, 1200, 1600],
+        buttons: [ButtonValue] = []
+    ) -> Self {
         SnapshotValue(
             modelName: "Sample Mouse",
             profile: 1,
@@ -23,7 +27,7 @@ extension SnapshotValue {
             sensor: .paw3950Ultra,
             currentStage: 1,
             stages: stages.map { StageValue(x: $0, y: $0) },
-            buttons: []
+            buttons: buttons
         )
     }
 

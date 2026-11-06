@@ -24,8 +24,11 @@ struct StageDpiField: View {
             .multilineTextAlignment(.trailing)
             .frame(width: 80)
             .focused($isFocused)
-            // The model ignores edits during a write, but the field would keep showing the typed
-            // text: an ignored edit changes no value, so SwiftUI has nothing to push back.
+            // Workaround, agreed with the owner: the model ignores edits during a write, but the
+            // field would keep showing the typed text, because an ignored edit changes no value
+            // and SwiftUI has nothing to push back. Swallowing key presses keeps the text from
+            // changing at all. It does not cover paste or drag-and-drop of text, which can still
+            // change the field during a write.
             .onKeyPress { press in
                 model.isPending && press.key != .tab ? .handled : .ignored
             }

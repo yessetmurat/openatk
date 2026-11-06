@@ -11,6 +11,9 @@ import SwiftUI
 /// The window: a fixed sidebar, and a detail with the header, the section and the error line.
 struct MainWindow: View {
 
+    /// The identifier of the window's scene.
+    static let sceneID = "main"
+
     private static let size = CGSize(width: 800, height: 540)
     private static let sidebarWidth: CGFloat = 220
     private static let sidebarTopPadding: CGFloat = 12
@@ -19,6 +22,9 @@ struct MainWindow: View {
     private static let sidebarFontSize: CGFloat = 13
 
     let model: MouseModel
+    let preferences: Preferences
+
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var section = SidebarSection.performance
 
@@ -50,14 +56,27 @@ struct MainWindow: View {
             .font(.custom(Self.fontFamily, size: Self.fontSize))
         }
         .frame(width: Self.size.width, height: Self.size.height)
+        // Observed with `MenuBarExtra` present: closing only hides the window, so its sections get
+        // no `onDisappear`. Minimizing gives `.inactive`, and must not leave the key monitor on.
+        .onChange(of: scenePhase) {
+            if scenePhase != .active {
+                model.cancelCapture()
+            }
+
+            if scenePhase == .background {
+                model.discardStageEdit()
+            }
+        }
     }
 
     @ViewBuilder private var sectionView: some View {
         switch section {
         case .performance:
             PerformanceView(model: model)
-        case .buttons, .settings:
-            Color.clear
+        case .buttons:
+            ButtonsView(model: model)
+        case .settings:
+            SettingsView(preferences: preferences)
         }
     }
 
